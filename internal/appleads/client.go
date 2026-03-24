@@ -74,6 +74,7 @@ type KeywordSummary struct {
 	Text      string   `json:"text"`
 	MatchType string   `json:"matchType"`
 	Status    string   `json:"status"`
+	Deleted   bool     `json:"deleted,omitempty"`
 	BidAmount *float64 `json:"bidAmount,omitempty"`
 	Currency  *string  `json:"currency,omitempty"`
 }
@@ -363,6 +364,11 @@ func (c *Client) fetchKeywordsFromEndpoint(ctx context.Context, auth *authContex
 			if status == "" {
 				status = "ENABLED"
 			}
+			deleted := boolFromAny(row["deleted"]) || boolFromAny(row["softDeleted"])
+			if deleted || status == "DELETED" || status == "REMOVED" {
+				seen[id] = struct{}{}
+				continue
+			}
 			bidAmount, currency := parseBid(mapFromAny(row["bidAmount"]), mapFromAny(row["bid"]))
 
 			results = append(results, KeywordSummary{
@@ -370,6 +376,7 @@ func (c *Client) fetchKeywordsFromEndpoint(ctx context.Context, auth *authContex
 				Text:      text,
 				MatchType: matchType,
 				Status:    status,
+				Deleted:   deleted,
 				BidAmount: bidAmount,
 				Currency:  currency,
 			})

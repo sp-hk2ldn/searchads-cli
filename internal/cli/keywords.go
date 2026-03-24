@@ -54,7 +54,19 @@ func RunKeywords(ctx context.Context, client *appleads.Client, args []string, js
 			respondCommandError("keywords", jsonOut, fmt.Errorf("No keywords provided. Use --text <kw> (repeatable) or --file <path>"))
 			return
 		}
+		existingKeywords, err := client.FetchKeywords(ctx, campaignID, adGroupID)
+		if err != nil {
+			respondCommandError("keywords", jsonOut, err)
+			return
+		}
 		for _, input := range inputs {
+			if target := selectKeywordMutationTarget(existingKeywords, input.text, input.matchType); target != nil {
+				if err := client.UpdateKeyword(ctx, campaignID, adGroupID, target.ID, input.matchType, input.status, input.bidAmount, input.currency); err != nil {
+					respondCommandError("keywords", jsonOut, err)
+					return
+				}
+				continue
+			}
 			if err := client.AddKeyword(ctx, campaignID, adGroupID, input.text, input.matchType, input.bidAmount, input.currency, input.status); err != nil {
 				respondCommandError("keywords", jsonOut, err)
 				return
@@ -66,6 +78,10 @@ func RunKeywords(ctx context.Context, client *appleads.Client, args []string, js
 		if err != nil {
 			respondCommandError("keywords", jsonOut, err)
 			return
+		}
+		keywordByID := make(map[int]appleads.KeywordSummary, len(keywords))
+		for _, keyword := range keywords {
+			keywordByID[keyword.ID] = keyword
 		}
 		targetIDs, err := resolveKeywordTargets(args, keywords)
 		if err != nil {
@@ -102,7 +118,14 @@ func RunKeywords(ctx context.Context, client *appleads.Client, args []string, js
 				currency = &c
 			}
 			for _, keywordID := range targetIDs {
-				if err := client.UpdateKeyword(ctx, campaignID, adGroupID, keywordID, "", &bidAmount, currency); err != nil {
+				if keyword, ok := keywordByID[keywordID]; ok {
+					if err := client.UpdateKeyword(ctx, campaignID, adGroupID, keywordID, keyword.MatchType, "", &bidAmount, currency); err != nil {
+						respondCommandError("keywords", jsonOut, err)
+						return
+					}
+					continue
+				}
+				if err := client.UpdateKeyword(ctx, campaignID, adGroupID, keywordID, "", "", &bidAmount, currency); err != nil {
 					respondCommandError("keywords", jsonOut, err)
 					return
 				}
@@ -116,7 +139,14 @@ func RunKeywords(ctx context.Context, client *appleads.Client, args []string, js
 			status = "PAUSED"
 		}
 		for _, keywordID := range targetIDs {
-			if err := client.UpdateKeyword(ctx, campaignID, adGroupID, keywordID, status, nil, nil); err != nil {
+			if keyword, ok := keywordByID[keywordID]; ok {
+				if err := client.UpdateKeyword(ctx, campaignID, adGroupID, keywordID, keyword.MatchType, status, nil, nil); err != nil {
+					respondCommandError("keywords", jsonOut, err)
+					return
+				}
+				continue
+			}
+			if err := client.UpdateKeyword(ctx, campaignID, adGroupID, keywordID, "", status, nil, nil); err != nil {
 				respondCommandError("keywords", jsonOut, err)
 				return
 			}
@@ -581,6 +611,21 @@ func resolveKeywordTargets(args []string, keywords []appleads.KeywordSummary) ([
 	}
 	sort.Ints(resolved)
 	return resolved, nil
+}
+
+func selectKeywordMutationTarget(keywords []appleads.KeywordSummary, text, matchType string) *appleads.KeywordSummary {
+	normalizedText := strings.ToLower(strings.TrimSpace(text))
+	normalizedMatchType := strings.ToUpper(strings.TrimSpace(matchType))
+	for i := range keywords {
+		keyword := &keywords[i]
+		if strings.ToLower(strings.TrimSpace(keyword.Text)) != normalizedText {
+			continue
+		}
+		if strings.ToUpper(strings.TrimSpace(keyword.MatchType)) == normalizedMatchType {
+			return keyword
+		}
+	}
+	return nil
 }
 
 func respondKeywordsMutation(jsonOut bool, action string, count int, campaignID int, adGroupID int) {

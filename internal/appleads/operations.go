@@ -704,12 +704,15 @@ func (c *Client) AddKeyword(ctx context.Context, campaignID, adGroupID int, text
 	return c.tryKeywordBulkWrite(ctx, http.MethodPost, paths, []any{payload})
 }
 
-func (c *Client) UpdateKeyword(ctx context.Context, campaignID, adGroupID, keywordID int, status string, bidAmount *float64, currency *string) error {
+func (c *Client) UpdateKeyword(ctx context.Context, campaignID, adGroupID, keywordID int, matchType, status string, bidAmount *float64, currency *string) error {
 	paths := []string{
 		fmt.Sprintf("%s/campaigns/%d/adgroups/%d/targetingkeywords", appleAdsAPIBase, campaignID, adGroupID),
 		fmt.Sprintf("%s/adgroups/%d/targetingkeywords", appleAdsAPIBase, adGroupID),
 	}
 	body := map[string]any{"id": keywordID}
+	if resolvedMatchType := strings.ToUpper(strings.TrimSpace(matchType)); resolvedMatchType != "" {
+		body["matchType"] = resolvedMatchType
+	}
 	if normalized := keywordStatusPayload(status); normalized != "" {
 		body["status"] = normalized
 	}
