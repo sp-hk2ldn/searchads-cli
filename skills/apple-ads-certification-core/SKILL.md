@@ -15,8 +15,11 @@ description: Core Apple Ads certification guidance for keyword strategy, campaig
 2. Use certification-aligned structure:
    - Separate Brand, Category, Competitor, and Discovery campaigns.
    - Keep Search Match focused on Discovery ad groups.
-3. Validate keyword/match-type setup against the checklist in `references/certification-findings.md`.
-4. Recommend concrete next actions with measurable thresholds.
+3. Validate keyword/match-type setup against the checklist and default thresholds in `references/certification-findings.md`.
+4. Recommend concrete next actions with measurable thresholds:
+   - Observation only when data volume is below review minimums.
+   - Bid or budget adjustment only when efficiency is acceptable and volume is proven.
+   - Restructure when query intent, match-type hygiene, or campaign separation is breaking attribution clarity.
 5. Clearly label observed guidance vs working-policy inference.
 
 ## Guardrails
@@ -29,4 +32,4 @@ description: Core Apple Ads certification guidance for keyword strategy, campaig
 - When users hit `429` on report creation, advise waiting for the 24-hour window to roll instead of repeatedly retrying.
 
 ## References
-- Read `references/certification-findings.md` for extracted observed findings and inferred policy notes.
+- Read `references/certification-findings.md` for extracted observed findings, review thresholds, and inferred policy notes.

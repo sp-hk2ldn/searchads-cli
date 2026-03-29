@@ -23,7 +23,7 @@
 3. Add same terms as exact-match negatives in Discovery ad groups.
 
 ## Review policy
-- After 7 days, pause/negate promoted terms that fail tap/install/CPA thresholds.
+- After 7 days, recommend pausing or negating promoted terms that fail tap/install/CPA thresholds, but require explicit user confirmation before executing any destructive action.
 - Raise bids or create tailored custom product pages when terms perform strongly.
 
 ## API limit guardrails

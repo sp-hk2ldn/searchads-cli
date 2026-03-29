@@ -31,6 +31,7 @@ description: Discovery -> Promotion -> Isolation operational skill for Apple Ads
 - No destructive changes without explicit user confirmation.
 - Do not remove discovery coverage before replacement exact terms are active.
 - Keep Search Match isolation behavior explicit in output recommendations.
+- Treat pause, negate, delete, and bulk deactivation actions as recommendation-only until the user explicitly approves execution.
 - Respect Apple Ads report API limits in reporting plans:
   - Impression Share report creation (`POST /api/v5/custom-reports`): max 10 reports per 24 hours.
   - Impression Share report listing (`GET /api/v5/custom-reports`): max `limit` 50 and 150 requests per 15 minutes.
