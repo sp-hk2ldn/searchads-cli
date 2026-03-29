@@ -170,7 +170,7 @@ func loadGoldenJSON(t *testing.T, name string) map[string]any {
 func filteredEnvWithoutAdsCreds(env []string) []string {
 	filtered := make([]string, 0, len(env))
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "OE_ADS_") {
+		if strings.HasPrefix(kv, "SEARCHADS_") {
 			continue
 		}
 		filtered = append(filtered, kv)

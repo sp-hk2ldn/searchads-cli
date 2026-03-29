@@ -23,7 +23,7 @@ func RunStatus(ctx context.Context) {
 		fmt.Println("searchads status")
 		fmt.Printf("time=%s\n", now)
 		fmt.Println("credentials=missing")
-		fmt.Println("next=set OE_ADS_CREDENTIALS_JSON or OE_ADS_CLIENT_ID/OE_ADS_TEAM_ID/OE_ADS_KEY_ID/OE_ADS_PRIVATE_KEY")
+		fmt.Println("next=set SEARCHADS_CREDENTIALS_JSON or SEARCHADS_CLIENT_ID/SEARCHADS_TEAM_ID/SEARCHADS_KEY_ID/SEARCHADS_PRIVATE_KEY")
 		return
 	}
 
