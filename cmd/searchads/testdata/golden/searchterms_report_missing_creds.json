@@ -1,4 +1,4 @@
 {
   "ok": false,
-  "error": "Missing Apple Ads credentials in env. Set OE_ADS_CREDENTIALS_JSON or OE_ADS_CLIENT_ID/OE_ADS_TEAM_ID/OE_ADS_KEY_ID/OE_ADS_PRIVATE_KEY"
+  "error": "Missing Apple Ads credentials in env. Set SEARCHADS_CREDENTIALS_JSON or SEARCHADS_CLIENT_ID/SEARCHADS_TEAM_ID/SEARCHADS_KEY_ID/SEARCHADS_PRIVATE_KEY"
 }
