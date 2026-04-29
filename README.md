@@ -26,11 +26,11 @@ Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## Credentials
 The CLI supports either:
-- `OE_ADS_CREDENTIALS_JSON` with JSON fields:
+- `SEARCHADS_CREDENTIALS_JSON` with JSON fields:
   - required: `clientId`, `teamId`, `keyId`, `privateKey`
   - optional: `orgId`, `popularityAdamId`, `popularityAdGroupId`, `popularityWebCookie`, `popularityXsrfToken`
 - split env vars:
-  - `OE_ADS_CLIENT_ID`, `OE_ADS_TEAM_ID`, `OE_ADS_KEY_ID`, `OE_ADS_PRIVATE_KEY`
+  - `SEARCHADS_CLIENT_ID`, `SEARCHADS_TEAM_ID`, `SEARCHADS_KEY_ID`, `SEARCHADS_PRIVATE_KEY`
 
 For local development, start from [.env.example](.env.example), copy it to `.env`, then load it into your shell before running the CLI:
 

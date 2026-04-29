@@ -92,7 +92,7 @@ compare_case() {
 }
 
 missing_creds=true
-if [[ -n "${OE_ADS_CREDENTIALS_JSON:-}" || (-n "${OE_ADS_CLIENT_ID:-}" && -n "${OE_ADS_TEAM_ID:-}" && -n "${OE_ADS_KEY_ID:-}" && -n "${OE_ADS_PRIVATE_KEY:-}") ]]; then
+if [[ -n "${SEARCHADS_CREDENTIALS_JSON:-}" || (-n "${SEARCHADS_CLIENT_ID:-}" && -n "${SEARCHADS_TEAM_ID:-}" && -n "${SEARCHADS_KEY_ID:-}" && -n "${SEARCHADS_PRIVATE_KEY:-}") ]]; then
   missing_creds=false
 fi
 
@@ -112,15 +112,15 @@ fi
 
 compare_case "campaigns/list" campaigns list --json
 
-if [[ -n "${OE_ADS_PARITY_CAMPAIGN_ID:-}" ]]; then
-  compare_case "adgroups/list" adgroups list --campaignId "$OE_ADS_PARITY_CAMPAIGN_ID" --json
-  compare_case "negatives/list" negatives list --campaignId "$OE_ADS_PARITY_CAMPAIGN_ID" --json
+if [[ -n "${SEARCHADS_PARITY_CAMPAIGN_ID:-}" ]]; then
+  compare_case "adgroups/list" adgroups list --campaignId "$SEARCHADS_PARITY_CAMPAIGN_ID" --json
+  compare_case "negatives/list" negatives list --campaignId "$SEARCHADS_PARITY_CAMPAIGN_ID" --json
 fi
 
-if [[ -n "${OE_ADS_PARITY_CAMPAIGN_ID:-}" && -n "${OE_ADS_PARITY_ADGROUP_ID:-}" ]]; then
-  compare_case "keywords/list" keywords list --campaignId "$OE_ADS_PARITY_CAMPAIGN_ID" --adGroupId "$OE_ADS_PARITY_ADGROUP_ID" --json
-  compare_case "searchterms/report" searchterms report --campaignId "$OE_ADS_PARITY_CAMPAIGN_ID" --adGroupId "$OE_ADS_PARITY_ADGROUP_ID" --startDate 2026-02-01 --endDate 2026-02-07 --json
+if [[ -n "${SEARCHADS_PARITY_CAMPAIGN_ID:-}" && -n "${SEARCHADS_PARITY_ADGROUP_ID:-}" ]]; then
+  compare_case "keywords/list" keywords list --campaignId "$SEARCHADS_PARITY_CAMPAIGN_ID" --adGroupId "$SEARCHADS_PARITY_ADGROUP_ID" --json
+  compare_case "searchterms/report" searchterms report --campaignId "$SEARCHADS_PARITY_CAMPAIGN_ID" --adGroupId "$SEARCHADS_PARITY_ADGROUP_ID" --startDate 2026-02-01 --endDate 2026-02-07 --json
 fi
 
 echo "Base live parity checks completed."
-echo "Tip: set OE_ADS_PARITY_CAMPAIGN_ID and OE_ADS_PARITY_ADGROUP_ID for deeper checks."
+echo "Tip: set SEARCHADS_PARITY_CAMPAIGN_ID and SEARCHADS_PARITY_ADGROUP_ID for deeper checks."

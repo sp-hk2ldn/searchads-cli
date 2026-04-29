@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const credentialsEnvJSON = "OE_ADS_CREDENTIALS_JSON"
+const credentialsEnvJSON = "SEARCHADS_CREDENTIALS_JSON"
 
 type Credentials struct {
 	ClientID          string `json:"clientId"`
@@ -37,31 +37,31 @@ func LoadCredentials() (*Credentials, error) {
 			return nil, fmt.Errorf("invalid %s JSON: %w", credentialsEnvJSON, err)
 		}
 		if !creds.IsComplete() {
-			return nil, errors.New("incomplete credentials in OE_ADS_CREDENTIALS_JSON")
+			return nil, errors.New("incomplete credentials in SEARCHADS_CREDENTIALS_JSON")
 		}
 		return &creds, nil
 	}
 
-	clientID := strings.TrimSpace(os.Getenv("OE_ADS_CLIENT_ID"))
-	teamID := strings.TrimSpace(os.Getenv("OE_ADS_TEAM_ID"))
-	keyID := strings.TrimSpace(os.Getenv("OE_ADS_KEY_ID"))
-	privateKey := strings.TrimSpace(os.Getenv("OE_ADS_PRIVATE_KEY"))
+	clientID := strings.TrimSpace(os.Getenv("SEARCHADS_CLIENT_ID"))
+	teamID := strings.TrimSpace(os.Getenv("SEARCHADS_TEAM_ID"))
+	keyID := strings.TrimSpace(os.Getenv("SEARCHADS_KEY_ID"))
+	privateKey := strings.TrimSpace(os.Getenv("SEARCHADS_PRIVATE_KEY"))
 
 	if clientID == "" || teamID == "" || keyID == "" || privateKey == "" {
 		return nil, nil
 	}
 
-	adGroupID, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("OE_ADS_POPULARITY_ADGROUP_ID")))
+	adGroupID, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("SEARCHADS_POPULARITY_ADGROUP_ID")))
 	creds := &Credentials{
 		ClientID:          clientID,
 		TeamID:            teamID,
 		KeyID:             keyID,
 		PrivateKey:        privateKey,
-		OrgID:             strings.TrimSpace(os.Getenv("OE_ADS_ORG_ID")),
-		PopularityAdamID:  strings.TrimSpace(os.Getenv("OE_ADS_POPULARITY_ADAM_ID")),
+		OrgID:             strings.TrimSpace(os.Getenv("SEARCHADS_ORG_ID")),
+		PopularityAdamID:  strings.TrimSpace(os.Getenv("SEARCHADS_POPULARITY_ADAM_ID")),
 		PopularityAdGroup: adGroupID,
-		PopularityCookie:  strings.TrimSpace(os.Getenv("OE_ADS_POPULARITY_WEB_COOKIE")),
-		PopularityXSRF:    strings.TrimSpace(os.Getenv("OE_ADS_POPULARITY_XSRF_TOKEN")),
+		PopularityCookie:  strings.TrimSpace(os.Getenv("SEARCHADS_POPULARITY_WEB_COOKIE")),
+		PopularityXSRF:    strings.TrimSpace(os.Getenv("SEARCHADS_POPULARITY_XSRF_TOKEN")),
 	}
 	return creds, nil
 }
