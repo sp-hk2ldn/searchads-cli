@@ -381,7 +381,7 @@ func runAdGroupsDelete(ctx context.Context, client *appleads.Client, args []stri
 		return
 	}
 	if err := client.DeleteAdGroup(ctx, campaignID, adGroupID); err != nil {
-		respondCommandError("adgroups", jsonOut, err)
+		respondDeleteContractError("adgroups", jsonOut, err)
 		return
 	}
 	if jsonOut {

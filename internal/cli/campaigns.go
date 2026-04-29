@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -316,7 +317,7 @@ func runCampaignsDelete(ctx context.Context, client *appleads.Client, args []str
 		return
 	}
 	if err := client.DeleteCampaign(ctx, campaignID); err != nil {
-		respondCommandError("campaigns", jsonOut, err)
+		respondDeleteContractError("campaigns", jsonOut, err)
 		return
 	}
 	if jsonOut {
@@ -420,4 +421,12 @@ func respondCommandError(command string, jsonOut bool, err error) {
 		return
 	}
 	failText("%s failed: %s", command, err.Error())
+}
+
+func respondDeleteContractError(command string, jsonOut bool, err error) {
+	msg := err.Error()
+	if strings.Contains(msg, "documented v5 campaign delete endpoint") || strings.Contains(msg, "documented v5 ad group delete endpoint") || strings.Contains(msg, "documented v5 keyword delete endpoint") {
+		msg += "; fail-fast policy: no legacy endpoint fallback was attempted because Apple docs currently specify DELETE on the v5 endpoint for this object"
+	}
+	respondCommandError(command, jsonOut, errors.New(msg))
 }

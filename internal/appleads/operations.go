@@ -245,10 +245,10 @@ func (c *Client) DeleteCampaign(ctx context.Context, campaignID int) error {
 	if err != nil {
 		return err
 	}
-	if statusCode < 200 || statusCode > 299 {
-		return httpStatusError(statusCode, respBody)
+	if statusCode >= 200 && statusCode <= 299 {
+		return nil
 	}
-	return nil
+	return annotateDeleteContractError("campaign", campaignID, httpStatusError(statusCode, respBody))
 }
 
 func (c *Client) UpdateCampaignDailyBudget(ctx context.Context, campaignID int, budgetAmount float64, budgetCurrency string) (*CampaignSummary, error) {
@@ -389,35 +389,25 @@ func (c *Client) DeleteAdGroup(ctx context.Context, campaignID, adGroupID int) e
 	if err != nil {
 		return err
 	}
-	paths := []string{
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodDelete,
 		fmt.Sprintf("%s/campaigns/%d/adgroups/%d", appleAdsAPIBase, campaignID, adGroupID),
-		fmt.Sprintf("%s/adgroups/%d", appleAdsAPIBase, adGroupID),
+		nil,
+	)
+	if err != nil {
+		return err
 	}
-	var lastErr error
-	for i, path := range paths {
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodDelete, path, nil)
-		if reqErr != nil {
-			return reqErr
-		}
-		req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-		req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
-		respBody, statusCode, doErr := c.do(req)
-		if doErr != nil {
-			return doErr
-		}
-		if statusCode >= 200 && statusCode <= 299 {
-			return nil
-		}
-		lastErr = httpStatusError(statusCode, respBody)
-		if apiErr, ok := lastErr.(*APIError); ok && apiErr.StatusCode == http.StatusNotFound && i == 0 {
-			continue
-		}
-		return lastErr
+	req.Header.Set("Authorization", "Bearer "+auth.accessToken)
+	req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
+	respBody, statusCode, err := c.do(req)
+	if err != nil {
+		return err
 	}
-	if lastErr != nil {
-		return lastErr
+	if statusCode >= 200 && statusCode <= 299 {
+		return nil
 	}
-	return errors.New("ad group delete failed")
+	return annotateDeleteContractError("ad group", adGroupID, httpStatusError(statusCode, respBody))
 }
 
 func (c *Client) FetchAds(ctx context.Context, campaignID, adGroupID int) ([]AdSummary, error) {
@@ -734,35 +724,57 @@ func (c *Client) DeleteKeyword(ctx context.Context, campaignID, adGroupID, keywo
 	if err != nil {
 		return err
 	}
-	paths := []string{
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodDelete,
 		fmt.Sprintf("%s/campaigns/%d/adgroups/%d/targetingkeywords/%d", appleAdsAPIBase, campaignID, adGroupID, keywordID),
-		fmt.Sprintf("%s/adgroups/%d/targetingkeywords/%d", appleAdsAPIBase, adGroupID, keywordID),
+		nil,
+	)
+	if err != nil {
+		return err
 	}
-	var lastErr error
-	for i, path := range paths {
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodDelete, path, nil)
-		if reqErr != nil {
-			return reqErr
-		}
-		req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-		req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
-		respBody, statusCode, doErr := c.do(req)
-		if doErr != nil {
-			return doErr
-		}
-		if statusCode >= 200 && statusCode <= 299 {
-			return nil
-		}
-		lastErr = httpStatusError(statusCode, respBody)
-		if apiErr, ok := lastErr.(*APIError); ok && apiErr.StatusCode == http.StatusNotFound && i == 0 {
-			continue
-		}
-		return lastErr
+	req.Header.Set("Authorization", "Bearer "+auth.accessToken)
+	req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
+	respBody, statusCode, err := c.do(req)
+	if err != nil {
+		return err
 	}
-	if lastErr != nil {
-		return lastErr
+	if statusCode >= 200 && statusCode <= 299 {
+		return nil
 	}
-	return errors.New("keyword delete failed")
+	apiErr := httpStatusError(statusCode, respBody)
+	if keywordAlreadyDeleted(apiErr) {
+		return nil
+	}
+	return annotateDeleteContractError("keyword", keywordID, apiErr)
+}
+
+func keywordAlreadyDeleted(err error) bool {
+	if err == nil {
+		return false
+	}
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(apiErr.Message))
+	return strings.Contains(msg, "already been deleted") || strings.Contains(msg, "already deleted")
+}
+
+func annotateDeleteContractError(kind string, id int, err error) error {
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		return err
+	}
+	msg := strings.TrimSpace(apiErr.Message)
+	lower := strings.ToLower(msg)
+	if apiErr.StatusCode == http.StatusBadRequest && (strings.Contains(lower, "invalid field") || strings.Contains(lower, "invalid request") || strings.Contains(lower, "not readable by the system")) {
+		return fmt.Errorf("Apple Ads rejected the documented v5 %s delete endpoint for id %d with a 400 contract-style error; docs currently specify DELETE on /api/v5 for this object, so this appears to be an Apple-side contract/account inconsistency rather than a fallback candidate: %w", kind, id, err)
+	}
+	if apiErr.StatusCode == http.StatusMethodNotAllowed {
+		return fmt.Errorf("Apple Ads rejected the documented v5 %s delete endpoint for id %d with 405 method not allowed; docs currently specify DELETE on /api/v5 for this object, so this appears to be an Apple-side contract/account inconsistency rather than a fallback candidate: %w", kind, id, err)
+	}
+	return err
 }
 
 func (c *Client) AddNegativeKeywords(ctx context.Context, campaignID, adGroupID int, keywords []NegativeKeywordSummary) error {
