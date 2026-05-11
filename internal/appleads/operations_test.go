@@ -184,6 +184,78 @@ func TestCreateCampaignSupportsMaxConversionsAndTotalBudget(t *testing.T) {
 	}
 }
 
+func TestValidateCampaignBiddingStrategyRejectsInvalidMaxConversionsPayloads(t *testing.T) {
+	targetCPA := 10.0
+	tests := []struct {
+		name          string
+		strategy      string
+		targetCPA     *float64
+		supplySources []string
+		adChannelType string
+		wantErr       string
+	}{
+		{
+			name:          "missing target CPA",
+			strategy:      "MAX_CONVERSIONS",
+			supplySources: []string{"APPSTORE_SEARCH_RESULTS"},
+			adChannelType: "SEARCH",
+			wantErr:       "target CPA is required",
+		},
+		{
+			name:          "wrong supply source",
+			strategy:      "MAX_CONVERSIONS",
+			targetCPA:     &targetCPA,
+			supplySources: []string{"APPSTORE_SEARCH_TAB"},
+			adChannelType: "SEARCH",
+			wantErr:       "APPSTORE_SEARCH_RESULTS",
+		},
+		{
+			name:          "wrong channel",
+			strategy:      "MAX_CONVERSIONS",
+			targetCPA:     &targetCPA,
+			supplySources: []string{"APPSTORE_SEARCH_RESULTS"},
+			adChannelType: "DISPLAY",
+			wantErr:       "adChannelType SEARCH",
+		},
+		{
+			name:          "target CPA without max conversions",
+			strategy:      "MANUAL_CPT",
+			targetCPA:     &targetCPA,
+			supplySources: []string{"APPSTORE_SEARCH_RESULTS"},
+			adChannelType: "SEARCH",
+			wantErr:       "only supported",
+		},
+		{
+			name:          "unknown strategy",
+			strategy:      "AUTO_MAGIC",
+			supplySources: []string{"APPSTORE_SEARCH_RESULTS"},
+			adChannelType: "SEARCH",
+			wantErr:       "unsupported",
+		},
+		{
+			name:          "valid max conversions",
+			strategy:      "MAX_CONVERSIONS",
+			targetCPA:     &targetCPA,
+			supplySources: []string{"APPSTORE_SEARCH_RESULTS"},
+			adChannelType: "SEARCH",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateCampaignBiddingStrategy(tt.strategy, tt.targetCPA, tt.supplySources, tt.adChannelType)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestUpdateCampaignBiddingStrategyPayloads(t *testing.T) {
 	t.Setenv(credentialsEnvJSON, testCredentialsJSON(t))
 

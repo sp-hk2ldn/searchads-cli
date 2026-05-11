@@ -452,6 +452,10 @@ func runCampaignsCreate(ctx context.Context, client *appleads.Client, args []str
 		}
 		targetCPA = &v
 	}
+	if err := validateCampaignCreateBiddingFlags(args, biddingStrategy, targetCPA); err != nil {
+		respondCommandError("campaigns", jsonOut, err)
+		return
+	}
 
 	countriesValue := firstNonEmptyString(valueForFlag(args, "--countries"), "GB")
 	countries := []string{}
@@ -499,6 +503,37 @@ func runCampaignsCreate(ctx context.Context, client *appleads.Client, args []str
 		return
 	}
 	fmt.Printf("ok createdCampaign id=%d status=%s name=%s\n", created.ID, created.Status, created.Name)
+}
+
+func validateCampaignCreateBiddingFlags(args []string, biddingStrategy string, targetCPA *float64) error {
+	switch biddingStrategy {
+	case "":
+		if targetCPA != nil {
+			return fmt.Errorf("--targetCpa requires --biddingStrategy MAX_CONVERSIONS")
+		}
+		return nil
+	case "MANUAL_CPT":
+		if targetCPA != nil {
+			return fmt.Errorf("--targetCpa is only supported with --biddingStrategy MAX_CONVERSIONS")
+		}
+		return nil
+	case "MAX_CONVERSIONS":
+		if targetCPA == nil {
+			return fmt.Errorf("Missing required --targetCpa <number> for MAX_CONVERSIONS")
+		}
+		if rawSupplySources := splitCSVValues(valuesForFlag(args, "--supplySource")); len(rawSupplySources) > 0 {
+			supplySources := normalizeUpperValues(rawSupplySources)
+			if len(supplySources) != 1 || supplySources[0] != "APPSTORE_SEARCH_RESULTS" {
+				return fmt.Errorf("MAX_CONVERSIONS only supports --supplySource APPSTORE_SEARCH_RESULTS")
+			}
+		}
+		if adChannelType := strings.ToUpper(strings.TrimSpace(valueForFlag(args, "--adChannelType"))); adChannelType != "" && adChannelType != "SEARCH" {
+			return fmt.Errorf("MAX_CONVERSIONS requires --adChannelType SEARCH")
+		}
+		return nil
+	default:
+		return fmt.Errorf("Unsupported --biddingStrategy %s. Use MANUAL_CPT or MAX_CONVERSIONS", biddingStrategy)
+	}
 }
 
 func respondCommandError(command string, jsonOut bool, err error) {

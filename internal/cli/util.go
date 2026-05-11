@@ -5,7 +5,6 @@ import (
 	"fmt"
 	neturl "net/url"
 	"os"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -130,22 +129,49 @@ func mergeMetricValues(dst map[string]any, src map[string]any) map[string]any {
 			dst[key] = mergeMoneyMetric(mapFromAnyCLI(dst[key]), mapFromAnyCLI(value))
 			continue
 		}
-		switch typed := value.(type) {
-		case int:
-			dst[key] = intFromAnyCLI(dst[key]) + typed
-		case int64:
-			dst[key] = intFromAnyCLI(dst[key]) + int(typed)
-		case float64:
-			dst[key] = typed
-		case float32:
-			dst[key] = float64(typed)
-		default:
-			if reflect.ValueOf(value).IsValid() {
-				dst[key] = value
-			}
+		if isAdditiveMetricField(key) {
+			dst[key] = intFromAnyCLI(dst[key]) + intFromAnyCLI(value)
 		}
 	}
+	removeDerivedMetricFields(dst)
 	return dst
+}
+
+func isAdditiveMetricField(key string) bool {
+	switch key {
+	case "impressions",
+		"taps",
+		"tapInstalls",
+		"viewInstalls",
+		"totalInstalls",
+		"tapNewDownloads",
+		"viewNewDownloads",
+		"totalNewDownloads",
+		"tapRedownloads",
+		"viewRedownloads",
+		"totalRedownloads",
+		"tapPreOrdersPlaced",
+		"viewPreOrdersPlaced",
+		"totalPreOrdersPlaced":
+		return true
+	default:
+		return false
+	}
+}
+
+func removeDerivedMetricFields(metrics map[string]any) {
+	for _, key := range []string{
+		"avgCPM",
+		"avgCPT",
+		"tapInstallCPI",
+		"totalAvgCPI",
+		"tapInstallRate",
+		"totalInstallRate",
+		"conversionRate",
+		"ttr",
+	} {
+		delete(metrics, key)
+	}
 }
 
 func mergeMoneyMetric(dst map[string]any, src map[string]any) map[string]any {

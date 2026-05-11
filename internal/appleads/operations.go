@@ -193,11 +193,16 @@ func (c *Client) CreateCampaign(
 	if len(supplySources) == 0 {
 		supplySources = []string{"APPSTORE_SEARCH_RESULTS"}
 	}
+	normalizedAdChannelType := firstNonEmptyString(strings.ToUpper(strings.TrimSpace(adChannelType)), "SEARCH")
+	normalizedBiddingStrategy := strings.ToUpper(strings.TrimSpace(biddingStrategy))
+	if err := validateCampaignBiddingStrategy(normalizedBiddingStrategy, targetCPA, supplySources, normalizedAdChannelType); err != nil {
+		return nil, err
+	}
 	body := map[string]any{
 		"orgId":         auth.orgID,
 		"name":          name,
 		"status":        status,
-		"adChannelType": firstNonEmptyString(strings.ToUpper(strings.TrimSpace(adChannelType)), "SEARCH"),
+		"adChannelType": normalizedAdChannelType,
 		"supplySources": supplySources,
 		"billingEvent":  "TAPS",
 		"paymentModel":  "PAYG",
@@ -214,7 +219,6 @@ func (c *Client) CreateCampaign(
 			"currency": budgetCurrency,
 		}
 	}
-	normalizedBiddingStrategy := strings.ToUpper(strings.TrimSpace(biddingStrategy))
 	if normalizedBiddingStrategy != "" {
 		body["biddingStrategy"] = normalizedBiddingStrategy
 	}
@@ -335,6 +339,9 @@ func (c *Client) UpdateCampaignBiddingStrategy(ctx context.Context, campaignID i
 	if normalized == "" {
 		return nil, fmt.Errorf("missing bidding strategy")
 	}
+	if normalized != "MANUAL_CPT" && normalized != "MAX_CONVERSIONS" {
+		return nil, fmt.Errorf("unsupported bidding strategy %q", biddingStrategy)
+	}
 	campaign := map[string]any{"biddingStrategy": normalized}
 	if normalized == "MAX_CONVERSIONS" {
 		if targetCPA == nil || *targetCPA <= 0 {
@@ -345,6 +352,9 @@ func (c *Client) UpdateCampaignBiddingStrategy(ctx context.Context, campaignID i
 			"currency": firstNonEmptyString(strings.ToUpper(strings.TrimSpace(currency)), "USD"),
 		}
 	} else if normalized == "MANUAL_CPT" {
+		if targetCPA != nil {
+			return nil, fmt.Errorf("target CPA is only supported for MAX_CONVERSIONS")
+		}
 		campaign["targetCpa"] = nil
 	}
 	payload, err := c.putJSON(
@@ -364,6 +374,34 @@ func (c *Client) UpdateCampaignBiddingStrategy(ctx context.Context, campaignID i
 		item = payload
 	}
 	return ptrCampaignSummary(parseCampaignSummary(item, campaignID, "")), nil
+}
+
+func validateCampaignBiddingStrategy(strategy string, targetCPA *float64, supplySources []string, adChannelType string) error {
+	switch strategy {
+	case "":
+		if targetCPA != nil {
+			return fmt.Errorf("target CPA is only supported for MAX_CONVERSIONS")
+		}
+		return nil
+	case "MANUAL_CPT":
+		if targetCPA != nil {
+			return fmt.Errorf("target CPA is only supported for MAX_CONVERSIONS")
+		}
+		return nil
+	case "MAX_CONVERSIONS":
+		if targetCPA == nil || *targetCPA <= 0 {
+			return fmt.Errorf("target CPA is required for MAX_CONVERSIONS")
+		}
+		if strings.ToUpper(strings.TrimSpace(adChannelType)) != "SEARCH" {
+			return fmt.Errorf("MAX_CONVERSIONS requires adChannelType SEARCH")
+		}
+		if len(supplySources) != 1 || supplySources[0] != "APPSTORE_SEARCH_RESULTS" {
+			return fmt.Errorf("MAX_CONVERSIONS only supports APPSTORE_SEARCH_RESULTS supply source")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported bidding strategy %q", strategy)
+	}
 }
 
 func (c *Client) CreateAdGroup(
