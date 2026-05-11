@@ -55,18 +55,35 @@ type TokenResponse struct {
 }
 
 type CampaignSummary struct {
-	ID     int    `json:"id"`
-	AdamID int    `json:"adamId,omitempty"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
+	ID                  int          `json:"id"`
+	AdamID              int          `json:"adamId,omitempty"`
+	Name                string       `json:"name"`
+	Status              string       `json:"status"`
+	DisplayStatus       string       `json:"displayStatus,omitempty"`
+	ServingStatus       string       `json:"servingStatus,omitempty"`
+	ServingStateReasons []string     `json:"servingStateReasons,omitempty"`
+	BiddingStrategy     string       `json:"biddingStrategy,omitempty"`
+	TargetCPA           *MoneyAmount `json:"targetCpa,omitempty"`
+	DailyBudgetAmount   *MoneyAmount `json:"dailyBudgetAmount,omitempty"`
+	BudgetAmount        *MoneyAmount `json:"budgetAmount,omitempty"`
+	SupplySources       []string     `json:"supplySources,omitempty"`
+	AdChannelType       string       `json:"adChannelType,omitempty"`
 }
 
 type AdGroupSummary struct {
-	ID         int      `json:"id"`
-	Name       string   `json:"name"`
-	Status     string   `json:"status"`
-	DefaultBid *float64 `json:"defaultBid,omitempty"`
-	Currency   *string  `json:"currency,omitempty"`
+	ID                        int          `json:"id"`
+	CampaignID                int          `json:"campaignId,omitempty"`
+	Name                      string       `json:"name"`
+	Status                    string       `json:"status"`
+	DisplayStatus             string       `json:"displayStatus,omitempty"`
+	ServingStatus             string       `json:"servingStatus,omitempty"`
+	ServingStateReasons       []string     `json:"servingStateReasons,omitempty"`
+	DefaultBid                *float64     `json:"defaultBid,omitempty"`
+	Currency                  *string      `json:"currency,omitempty"`
+	BiddingStrategy           string       `json:"biddingStrategy,omitempty"`
+	AutomatedKeywordsOptIn    *bool        `json:"automatedKeywordsOptIn,omitempty"`
+	AutomatedKeywordsRequired *bool        `json:"automatedKeywordsRequired,omitempty"`
+	CPAGoal                   *MoneyAmount `json:"cpaGoal,omitempty"`
 }
 
 type KeywordSummary struct {
@@ -77,6 +94,11 @@ type KeywordSummary struct {
 	Deleted   bool     `json:"deleted,omitempty"`
 	BidAmount *float64 `json:"bidAmount,omitempty"`
 	Currency  *string  `json:"currency,omitempty"`
+}
+
+type MoneyAmount struct {
+	Amount   float64 `json:"amount"`
+	Currency string  `json:"currency"`
 }
 
 type APIError struct {
@@ -148,17 +170,7 @@ func (c *Client) FetchCampaigns(ctx context.Context) ([]CampaignSummary, error) 
 			if _, already := seen[id]; already {
 				continue
 			}
-			name := strings.TrimSpace(stringFromAny(row["name"]))
-			if name == "" {
-				name = fmt.Sprintf("Campaign %d", id)
-			}
-			status := strings.ToUpper(strings.TrimSpace(stringFromAny(row["status"])))
-			results = append(results, CampaignSummary{
-				ID:     id,
-				AdamID: intFromAny(row["adamId"]),
-				Name:   name,
-				Status: status,
-			})
+			results = append(results, parseCampaignSummary(row, id, ""))
 			seen[id] = struct{}{}
 		}
 
@@ -238,18 +250,7 @@ func (c *Client) FetchAdGroups(ctx context.Context, campaignID int) ([]AdGroupSu
 				name = fmt.Sprintf("Ad Group %d", id)
 			}
 
-			status := strings.ToUpper(strings.TrimSpace(stringFromAny(row["status"])))
-			bidAmount, currency := parseBid(
-				mapFromAny(row["defaultCpcBid"]),
-				mapFromAny(row["defaultBidAmount"]),
-			)
-			results = append(results, AdGroupSummary{
-				ID:         id,
-				Name:       name,
-				Status:     status,
-				DefaultBid: bidAmount,
-				Currency:   currency,
-			})
+			results = append(results, parseAdGroupSummary(row, id, name))
 			seen[id] = struct{}{}
 		}
 

@@ -126,6 +126,148 @@ func TestUpdateCampaignStatusReturnsUpdatedSummary(t *testing.T) {
 	}
 }
 
+func TestCreateCampaignSupportsMaxConversionsAndTotalBudget(t *testing.T) {
+	t.Setenv(credentialsEnvJSON, testCredentialsJSON(t))
+
+	var seenBody string
+	client := NewClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.URL.String() == appleIDTokenURL:
+				return jsonResponse(http.StatusOK, `{"access_token":"token","expires_in":3600}`), nil
+			case req.URL.String() == appleAdsAPIBase+"/me":
+				return jsonResponse(http.StatusOK, `{"data":{"parentOrgId":"123"}}`), nil
+			case req.Method == http.MethodPost && req.URL.Path == "/api/v5/campaigns":
+				body, _ := io.ReadAll(req.Body)
+				seenBody = string(body)
+				return jsonResponse(http.StatusOK, `{"data":{"id":42,"name":"Max campaign","status":"ENABLED","biddingStrategy":"MAX_CONVERSIONS","targetCpa":{"amount":"10","currency":"USD"},"dailyBudgetAmount":{"amount":"250","currency":"USD"},"budgetAmount":{"amount":"1500","currency":"USD"},"supplySources":["APPSTORE_SEARCH_RESULTS"],"adChannelType":"SEARCH"}}`), nil
+			default:
+				return jsonResponse(http.StatusNotFound, `{"error":"unexpected request: `+req.Method+` `+req.URL.String()+`"}`), nil
+			}
+		}),
+	})
+
+	totalBudget := 1500.0
+	targetCPA := 10.0
+	campaign, err := client.CreateCampaign(
+		context.Background(),
+		"Max campaign",
+		"ENABLED",
+		250,
+		"USD",
+		&totalBudget,
+		"535500008",
+		[]string{"US"},
+		"2026-02-01T00:00:00.000",
+		"",
+		"APPSTORE_SEARCH_RESULTS",
+		"SEARCH",
+		"MAX_CONVERSIONS",
+		&targetCPA,
+		"USD",
+	)
+	if err != nil {
+		t.Fatalf("create campaign failed: %v", err)
+	}
+	for _, want := range []string{
+		`"dailyBudgetAmount":{"amount":"250.0000","currency":"USD"}`,
+		`"budgetAmount":{"amount":"1500.0000","currency":"USD"}`,
+		`"biddingStrategy":"MAX_CONVERSIONS"`,
+		`"targetCpa":{"amount":"10.0000","currency":"USD"}`,
+	} {
+		if !strings.Contains(seenBody, want) {
+			t.Fatalf("expected request body to contain %s, got %s", want, seenBody)
+		}
+	}
+	if campaign.BiddingStrategy != "MAX_CONVERSIONS" || campaign.TargetCPA == nil || campaign.TargetCPA.Currency != "USD" {
+		t.Fatalf("unexpected campaign response: %+v", campaign)
+	}
+}
+
+func TestUpdateCampaignBiddingStrategyPayloads(t *testing.T) {
+	t.Setenv(credentialsEnvJSON, testCredentialsJSON(t))
+
+	var seenBodies []string
+	client := NewClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.URL.String() == appleIDTokenURL:
+				return jsonResponse(http.StatusOK, `{"access_token":"token","expires_in":3600}`), nil
+			case req.URL.String() == appleAdsAPIBase+"/me":
+				return jsonResponse(http.StatusOK, `{"data":{"parentOrgId":"123"}}`), nil
+			case req.Method == http.MethodPut && req.URL.Path == "/api/v5/campaigns/42":
+				body, _ := io.ReadAll(req.Body)
+				seenBodies = append(seenBodies, string(body))
+				if strings.Contains(string(body), "MAX_CONVERSIONS") {
+					return jsonResponse(http.StatusOK, `{"data":{"id":42,"name":"Campaign","status":"ENABLED","biddingStrategy":"MAX_CONVERSIONS","targetCpa":{"amount":"12","currency":"USD"}}}`), nil
+				}
+				return jsonResponse(http.StatusOK, `{"data":{"id":42,"name":"Campaign","status":"ENABLED","biddingStrategy":"MANUAL_CPT","targetCpa":null}}`), nil
+			default:
+				return jsonResponse(http.StatusNotFound, `{"error":"unexpected request: `+req.Method+` `+req.URL.String()+`"}`), nil
+			}
+		}),
+	})
+
+	targetCPA := 12.0
+	if _, err := client.UpdateCampaignBiddingStrategy(context.Background(), 42, "MAX_CONVERSIONS", &targetCPA, "USD"); err != nil {
+		t.Fatalf("update to max conversions failed: %v", err)
+	}
+	if _, err := client.UpdateCampaignBiddingStrategy(context.Background(), 42, "MANUAL_CPT", nil, "USD"); err != nil {
+		t.Fatalf("update to manual failed: %v", err)
+	}
+	if len(seenBodies) != 2 {
+		t.Fatalf("expected two update requests, got %d", len(seenBodies))
+	}
+	for _, want := range []string{`"biddingStrategy":"MAX_CONVERSIONS"`, `"targetCpa":{"amount":"12.0000","currency":"USD"}`} {
+		if !strings.Contains(seenBodies[0], want) {
+			t.Fatalf("expected max conversions body to contain %s, got %s", want, seenBodies[0])
+		}
+	}
+	for _, want := range []string{`"biddingStrategy":"MANUAL_CPT"`, `"targetCpa":null`} {
+		if !strings.Contains(seenBodies[1], want) {
+			t.Fatalf("expected manual body to contain %s, got %s", want, seenBodies[1])
+		}
+	}
+}
+
+func TestParseMetricsPreservesAPI5InstallAndPreorderBreakdowns(t *testing.T) {
+	metrics := parseMetrics(map[string]any{
+		"impressions":          float64(100),
+		"taps":                 float64(10),
+		"tapInstalls":          float64(3),
+		"viewInstalls":         float64(2),
+		"totalInstalls":        float64(5),
+		"tapPreOrdersPlaced":   float64(1),
+		"viewPreOrdersPlaced":  float64(2),
+		"totalPreOrdersPlaced": float64(3),
+		"totalNewDownloads":    float64(4),
+		"totalRedownloads":     float64(1),
+		"localSpend":           map[string]any{"amount": "12.50", "currency": "USD"},
+		"totalInstallRate":     float64(0.5),
+		"tapInstallRate":       float64(0.3),
+		"ttr":                  float64(0.1),
+	})
+
+	if metrics.installs == nil || *metrics.installs != 5 {
+		t.Fatalf("expected total installs to be preserved, got %+v", metrics.installs)
+	}
+	for key, want := range map[string]int{
+		"tapInstalls":          3,
+		"viewInstalls":         2,
+		"totalInstalls":        5,
+		"tapPreOrdersPlaced":   1,
+		"viewPreOrdersPlaced":  2,
+		"totalPreOrdersPlaced": 3,
+		"totalNewDownloads":    4,
+		"totalRedownloads":     1,
+	} {
+		got, _ := metrics.values[key].(int)
+		if got != want {
+			t.Fatalf("expected %s=%d, got %v in %+v", key, want, metrics.values[key], metrics.values)
+		}
+	}
+}
+
 func jsonResponse(status int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: status,

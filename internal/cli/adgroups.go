@@ -81,6 +81,7 @@ func runAdGroupsReport(ctx context.Context, client *appleads.Client, args []stri
 		taps        int
 		impressions int
 		installs    int
+		metrics     map[string]any
 	}{}
 	var currencyCode *string
 
@@ -128,6 +129,9 @@ func runAdGroupsReport(ctx context.Context, client *appleads.Client, args []stri
 			} else {
 				row["currency"] = nil
 			}
+			if len(report.MetricValues) > 0 {
+				row["metrics"] = report.MetricValues
+			}
 			rows = append(rows, row)
 
 			total := totalsByDate[report.Date]
@@ -135,6 +139,7 @@ func runAdGroupsReport(ctx context.Context, client *appleads.Client, args []stri
 			total.taps += report.Taps
 			total.impressions += report.Impressions
 			total.installs += installs
+			total.metrics = mergeMetricValues(total.metrics, report.MetricValues)
 			totalsByDate[report.Date] = total
 		}
 	}
@@ -174,6 +179,9 @@ func runAdGroupsReport(ctx context.Context, client *appleads.Client, args []stri
 			total["currency"] = *currencyCode
 		} else {
 			total["currency"] = nil
+		}
+		if len(t.metrics) > 0 {
+			total["metrics"] = t.metrics
 		}
 		totals = append(totals, total)
 	}
@@ -303,10 +311,14 @@ func runAdGroupsCreate(ctx context.Context, client *appleads.Client, args []stri
 		return
 	}
 	defaultBidRaw := strings.TrimSpace(valueForFlag(args, "--defaultBid"))
-	defaultBid := 0.0
-	if _, err := fmt.Sscanf(defaultBidRaw, "%f", &defaultBid); err != nil || defaultBid <= 0 {
-		respondCommandError("adgroups", jsonOut, fmt.Errorf("Missing required --defaultBid <number>"))
-		return
+	var defaultBid *float64
+	if defaultBidRaw != "" {
+		v := 0.0
+		if _, err := fmt.Sscanf(defaultBidRaw, "%f", &v); err != nil || v <= 0 {
+			respondCommandError("adgroups", jsonOut, fmt.Errorf("Invalid --defaultBid %q", defaultBidRaw))
+			return
+		}
+		defaultBid = &v
 	}
 	status := firstNonEmptyString(valueForFlag(args, "--status"), "ENABLED")
 	currency := firstNonEmptyString(valueForFlag(args, "--currency"), "GBP")
@@ -315,8 +327,20 @@ func runAdGroupsCreate(ctx context.Context, client *appleads.Client, args []stri
 		v := true
 		automatedKeywordsOptIn = &v
 	}
+	var automatedKeywordsRequired *bool
+	if hasFlag(args, "--automatedKeywordsRequired") {
+		v := true
+		automatedKeywordsRequired = &v
+		if automatedKeywordsOptIn == nil {
+			automatedKeywordsOptIn = &v
+		}
+	}
+	if defaultBid == nil && automatedKeywordsRequired == nil {
+		respondCommandError("adgroups", jsonOut, fmt.Errorf("Missing required --defaultBid <number> unless --automatedKeywordsRequired is set"))
+		return
+	}
 
-	created, err := client.CreateAdGroup(ctx, campaignID, name, status, defaultBid, currency, automatedKeywordsOptIn)
+	created, err := client.CreateAdGroup(ctx, campaignID, name, status, defaultBid, currency, automatedKeywordsOptIn, automatedKeywordsRequired)
 	if err != nil {
 		respondCommandError("adgroups", jsonOut, err)
 		return
@@ -328,6 +352,15 @@ func runAdGroupsCreate(ctx context.Context, client *appleads.Client, args []stri
 		}
 		if created.Currency != nil {
 			payload["currency"] = *created.Currency
+		}
+		if created.BiddingStrategy != "" {
+			payload["biddingStrategy"] = created.BiddingStrategy
+		}
+		if created.AutomatedKeywordsOptIn != nil {
+			payload["automatedKeywordsOptIn"] = *created.AutomatedKeywordsOptIn
+		}
+		if created.AutomatedKeywordsRequired != nil {
+			payload["automatedKeywordsRequired"] = *created.AutomatedKeywordsRequired
 		}
 		printJSON(payload)
 		return

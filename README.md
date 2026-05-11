@@ -1,12 +1,12 @@
 # searchads-cli (Go)
 
-Lightweight Apple Search Ads CLI in Go.
+Lightweight Apple Ads CLI in Go.
 
 ## Command Surface
 - `searchads status`
-- `searchads campaigns [list|find|create|pause|activate|delete|update-budget|set-budget|report] [flags] [--json]`
+- `searchads campaigns [list|find|create|pause|activate|delete|update-budget|set-budget|set-bidding-strategy|report] [flags] [--json]`
 - `searchads adgroups [list|find|create|pause|activate|delete|report] [flags] [--json]`
-- `searchads ads [list|find|get|create|update|pause|activate|delete] [flags] [--json]`
+- `searchads ads [list|find|get|create|update|pause|activate|delete|report] [flags] [--json]`
 - `searchads creatives [list|find|get|create] [flags] [--json]`
 - `searchads product-pages [list|get|locales|countries|devices] [flags] [--json]`
 - `searchads apps [search|get|localized-details|eligibility] [flags] [--json]`
@@ -17,6 +17,7 @@ Lightweight Apple Search Ads CLI in Go.
 - `searchads negatives [list|add|remove|pause|activate] --campaignId <id> [--adGroupId <id>] [--negativeKeywordId <id> ...] [--text <kw> ...] [--matchType EXACT|BROAD] [--json]`
 - `searchads sov-report --adamId <id> [--country GB,US] [--dateRange LAST_4_WEEKS] [--out reports/sov] [--json]`
 - `searchads reports [list|get|download] [--reportId <id>] [--state COMPLETED] [--nameContains text] [--limit N] [--out reports/custom/id.csv] [--json]`
+- `searchads budget-orders [list|get|create|update] [--budgetOrderId <id>] [--budgetAmount N] [--budgetCurrency GBP] [--json]`
 
 Full command and flag docs: [docs/COMMANDS.md](docs/COMMANDS.md)
 Open source release checklist: [docs/OPEN_SOURCE_RELEASE_CHECKLIST.md](docs/OPEN_SOURCE_RELEASE_CHECKLIST.md)

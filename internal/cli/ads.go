@@ -19,6 +19,8 @@ func RunAds(ctx context.Context, client *appleads.Client, args []string, jsonOut
 	switch action {
 	case "list":
 		runAdsList(ctx, client, args, jsonOut)
+	case "report":
+		runAdsReport(ctx, client, args, jsonOut)
 	case "find":
 		runAdsFind(ctx, client, args, jsonOut)
 	case "get", "show":
@@ -32,7 +34,93 @@ func RunAds(ctx context.Context, client *appleads.Client, args []string, jsonOut
 	case "delete", "remove":
 		runAdsDelete(ctx, client, args, jsonOut)
 	default:
-		respondCommandError("ads", jsonOut, fmt.Errorf("Unsupported ads action: %s. Use: list|find|get|create|update|pause|activate|delete", action))
+		respondCommandError("ads", jsonOut, fmt.Errorf("Unsupported ads action: %s. Use: list|find|get|create|update|pause|activate|delete|report", action))
+	}
+}
+
+func runAdsReport(ctx context.Context, client *appleads.Client, args []string, jsonOut bool) {
+	campaignID, err := requiredIntFlag(args, "--campaignId")
+	if err != nil {
+		respondCommandError("ads", jsonOut, err)
+		return
+	}
+	startRaw := valueForFlag(args, "--startDate")
+	endRaw := valueForFlag(args, "--endDate")
+	startDate, err := parseDate(startRaw)
+	if err != nil {
+		respondCommandError("ads", jsonOut, fmt.Errorf("Missing/invalid --startDate YYYY-MM-DD and --endDate YYYY-MM-DD"))
+		return
+	}
+	endDate, err := parseDate(endRaw)
+	if err != nil {
+		respondCommandError("ads", jsonOut, fmt.Errorf("Missing/invalid --startDate YYYY-MM-DD and --endDate YYYY-MM-DD"))
+		return
+	}
+	adIDs := sortedIntFlagValues(args, "--adId")
+	adGroupIDs := sortedIntFlagValues(args, "--adGroupId")
+
+	rows, err := client.FetchAdDailyMetrics(ctx, startDate, endDate, campaignID, adIDs, adGroupIDs)
+	if err != nil {
+		respondCommandError("ads", jsonOut, err)
+		return
+	}
+
+	totals := struct {
+		impressions int
+		taps        int
+		installs    int
+		spend       float64
+		metrics     map[string]any
+	}{}
+	for _, row := range rows {
+		totals.impressions += row.Impressions
+		totals.taps += row.Taps
+		if row.Installs != nil {
+			totals.installs += *row.Installs
+		}
+		totals.spend += row.Spend
+		totals.metrics = mergeMetricValues(totals.metrics, row.MetricValues)
+	}
+	cpt := 0.0
+	if totals.taps > 0 {
+		cpt = totals.spend / float64(totals.taps)
+	}
+	ttr := 0.0
+	if totals.impressions > 0 {
+		ttr = float64(totals.taps) / float64(totals.impressions)
+	}
+	installRate := 0.0
+	if totals.taps > 0 {
+		installRate = float64(totals.installs) / float64(totals.taps)
+	}
+	totalPayload := map[string]any{
+		"impressions": totals.impressions,
+		"taps":        totals.taps,
+		"installs":    totals.installs,
+		"spend":       totals.spend,
+		"cpt":         cpt,
+		"ttr":         ttr,
+		"installRate": installRate,
+	}
+	if len(totals.metrics) > 0 {
+		totalPayload["metrics"] = totals.metrics
+	}
+	payload := map[string]any{
+		"ok":         true,
+		"campaignId": campaignID,
+		"startDate":  startRaw,
+		"endDate":    endRaw,
+		"totals":     totalPayload,
+		"rows":       rows,
+	}
+	if jsonOut {
+		printJSON(payload)
+		return
+	}
+	fmt.Printf("campaignId=%d adRows=%d range=%s...%s\n", campaignID, len(rows), startRaw, endRaw)
+	fmt.Printf("totals taps=%d installs=%d spend=%.4f cpt=%.4f ttr=%.4f\n", totals.taps, totals.installs, totals.spend, cpt, ttr)
+	for _, row := range rows {
+		fmt.Printf("%s\t%.4f\t%d\t%d\t%.4f\t%d\t%s\t%s\n", row.Date, row.Spend, row.Taps, valueOrZero(row.Installs), row.CPT, row.AdID, row.CreativeType, row.AdName)
 	}
 }
 

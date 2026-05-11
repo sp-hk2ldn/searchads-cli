@@ -119,6 +119,11 @@ func runAppsLocalized(ctx context.Context, client *appleads.Client, args []strin
 }
 
 func runAppsEligibility(ctx context.Context, client *appleads.Client, args []string, jsonOut bool) {
+	adamID, err := requiredIntFlag(args, "--adamId")
+	if err != nil {
+		respondCommandError("apps", jsonOut, err)
+		return
+	}
 	offset := 0
 	if raw := strings.TrimSpace(valueForFlag(args, "--offset")); raw != "" {
 		_, _ = fmt.Sscanf(raw, "%d", &offset)
@@ -134,10 +139,7 @@ func runAppsEligibility(ctx context.Context, client *appleads.Client, args []str
 		}
 	}
 
-	conditions := make([]any, 0, 6)
-	if rawAdamIDs := splitCSVValues(valuesForFlag(args, "--adamId")); len(rawAdamIDs) > 0 {
-		conditions = append(conditions, selectorCondition("adamId", normalizeNonEmptyStrings(rawAdamIDs)))
-	}
+	conditions := make([]any, 0, 4)
 	if values := splitCSVValues(valuesForFlag(args, "--countryOrRegion")); len(values) > 0 {
 		conditions = append(conditions, selectorCondition("countryOrRegion", normalizeUpperValues(values)))
 	}
@@ -151,10 +153,9 @@ func runAppsEligibility(ctx context.Context, client *appleads.Client, args []str
 	selector := map[string]any{
 		"conditions": conditions,
 		"fields":     nil,
-		"orderBy":    []any{map[string]any{"field": "adamId", "sortOrder": "ASCENDING"}},
 		"pagination": map[string]any{"offset": offset, "limit": limit},
 	}
-	items, err := client.FindAppEligibility(ctx, selector)
+	items, err := client.FindAppEligibility(ctx, adamID, selector)
 	if err != nil {
 		respondCommandError("apps", jsonOut, err)
 		return

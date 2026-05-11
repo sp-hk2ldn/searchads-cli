@@ -118,6 +118,13 @@ func main() {
 		}
 		c := appleads.NewClient(nil)
 		cli.RunReports(ctx, c, commandArgs, hasFlag(args, "--json"))
+	case "budget-orders":
+		commandArgs := []string{}
+		if len(args) > 2 {
+			commandArgs = args[2:]
+		}
+		c := appleads.NewClient(nil)
+		cli.RunBudgetOrders(ctx, c, commandArgs, hasFlag(args, "--json"))
 	case "help", "-h", "--help":
 		printHelp()
 	default:
@@ -143,9 +150,9 @@ func printHelp() {
 
 Commands:
   searchads status
-  searchads campaigns [list|find|create|pause|activate|delete|update-budget|set-budget|report] [flags] [--json]
+  searchads campaigns [list|find|create|pause|activate|delete|update-budget|set-budget|set-bidding-strategy|report] [flags] [--json]
   searchads adgroups [list|find|create|pause|activate|delete|report] [flags] [--json]
-  searchads ads [list|find|get|create|update|pause|activate|delete] [flags] [--json]
+  searchads ads [list|find|get|create|update|pause|activate|delete|report] [flags] [--json]
   searchads creatives [list|find|get|create] [flags] [--json]
   searchads product-pages [list|get|locales|countries|devices] [flags] [--json]
   searchads apps [search|get|localized-details|eligibility] [flags] [--json]
@@ -155,5 +162,6 @@ Commands:
   searchads searchterms report --campaignId <id> [--adGroupId <id>] --startDate YYYY-MM-DD --endDate YYYY-MM-DD [--minTaps N] [--minSpend X] [--json]
   searchads negatives [list|add|remove|pause|activate] --campaignId <id> [--adGroupId <id>] [--negativeKeywordId <id> ...] [--text <kw> ...] [--matchType EXACT|BROAD] [--json]
   searchads sov-report --adamId <id> [--country GB,US] [--dateRange LAST_4_WEEKS] [--out reports/sov] [--json]
-  searchads reports [list|get|download] [--reportId <id>] [--state COMPLETED] [--nameContains text] [--limit N] [--out reports/custom/id.csv] [--json]`)
+  searchads reports [list|get|download] [--reportId <id>] [--state COMPLETED] [--nameContains text] [--limit N] [--out reports/custom/id.csv] [--json]
+  searchads budget-orders [list|get|create|update] [flags] [--json]`)
 }

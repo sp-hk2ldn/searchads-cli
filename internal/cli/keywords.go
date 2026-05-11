@@ -279,6 +279,7 @@ func runKeywordsReport(ctx context.Context, client *appleads.Client, args []stri
 		installs     int
 		spend        float64
 		currencyCode *string
+		metrics      map[string]any
 	}
 	byKeyword := map[int]*agg{}
 	for _, row := range rows {
@@ -302,6 +303,7 @@ func runKeywordsReport(ctx context.Context, client *appleads.Client, args []stri
 		if entry.currencyCode == nil {
 			entry.currencyCode = row.CurrencyCode
 		}
+		entry.metrics = mergeMetricValues(entry.metrics, row.MetricValues)
 	}
 
 	keywordRows := make([]map[string]any, 0, len(byKeyword))
@@ -363,6 +365,9 @@ func runKeywordsReport(ctx context.Context, client *appleads.Client, args []stri
 		} else {
 			item["currency"] = nil
 		}
+		if len(row.metrics) > 0 {
+			item["metrics"] = row.metrics
+		}
 		keywordRows = append(keywordRows, item)
 	}
 
@@ -382,12 +387,16 @@ func runKeywordsReport(ctx context.Context, client *appleads.Client, args []stri
 		taps        int
 		installs    int
 		spend       float64
+		metrics     map[string]any
 	}{}
 	for _, item := range keywordRows {
 		totals.impressions += item["impressions"].(int)
 		totals.taps += item["taps"].(int)
 		totals.installs += item["installs"].(int)
 		totals.spend += item["spend"].(float64)
+		if metrics, ok := item["metrics"].(map[string]any); ok {
+			totals.metrics = mergeMetricValues(totals.metrics, metrics)
+		}
 	}
 	cpt := 0.0
 	if totals.taps > 0 {
@@ -402,22 +411,26 @@ func runKeywordsReport(ctx context.Context, client *appleads.Client, args []stri
 		installRate = float64(totals.installs) / float64(totals.taps)
 	}
 
+	totalPayload := map[string]any{
+		"impressions": totals.impressions,
+		"taps":        totals.taps,
+		"installs":    totals.installs,
+		"spend":       totals.spend,
+		"cpt":         cpt,
+		"ttr":         ttr,
+		"installRate": installRate,
+	}
+	if len(totals.metrics) > 0 {
+		totalPayload["metrics"] = totals.metrics
+	}
 	payload := map[string]any{
 		"ok":         true,
 		"campaignId": campaignID,
 		"adGroupId":  adGroupID,
 		"startDate":  startRaw,
 		"endDate":    endRaw,
-		"totals": map[string]any{
-			"impressions": totals.impressions,
-			"taps":        totals.taps,
-			"installs":    totals.installs,
-			"spend":       totals.spend,
-			"cpt":         cpt,
-			"ttr":         ttr,
-			"installRate": installRate,
-		},
-		"rows": keywordRows,
+		"totals":     totalPayload,
+		"rows":       keywordRows,
 	}
 	if jsonOut {
 		printJSON(payload)
