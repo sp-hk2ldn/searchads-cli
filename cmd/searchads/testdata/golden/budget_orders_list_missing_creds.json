@@ -1,0 +1,4 @@
+{
+  "error": "Missing Apple Ads credentials in env. Set SEARCHADS_CREDENTIALS_JSON or SEARCHADS_CLIENT_ID/SEARCHADS_TEAM_ID/SEARCHADS_KEY_ID/SEARCHADS_PRIVATE_KEY",
+  "ok": false
+}

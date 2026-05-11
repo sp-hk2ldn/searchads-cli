@@ -29,6 +29,8 @@ func RunCampaigns(ctx context.Context, client *appleads.Client, args []string, j
 		runCampaignsDelete(ctx, client, args, jsonOut)
 	case "update-budget", "set-budget":
 		runCampaignsUpdateBudget(ctx, client, args, action, jsonOut)
+	case "set-bidding-strategy", "update-bidding-strategy":
+		runCampaignsUpdateBiddingStrategy(ctx, client, args, action, jsonOut)
 	case "create":
 		runCampaignsCreate(ctx, client, args, jsonOut)
 	default:
@@ -81,6 +83,7 @@ func runCampaignsReport(ctx context.Context, client *appleads.Client, args []str
 		taps        int
 		impressions int
 		installs    int
+		metrics     map[string]any
 	}{}
 	campaignRows := make([]map[string]any, 0, len(filtered))
 	var currencyCode *string
@@ -96,6 +99,7 @@ func runCampaignsReport(ctx context.Context, client *appleads.Client, args []str
 		campaignTaps := 0
 		campaignImpressions := 0
 		campaignInstalls := 0
+		campaignMetrics := map[string]any(nil)
 		for _, group := range adGroups {
 			dailyRows, err := client.FetchAdGroupDailyMetrics(ctx, startDate, endDate, campaign.ID, group.ID)
 			if err != nil {
@@ -110,6 +114,7 @@ func runCampaignsReport(ctx context.Context, client *appleads.Client, args []str
 				if daily.Installs != nil {
 					total.installs += *daily.Installs
 				}
+				total.metrics = mergeMetricValues(total.metrics, daily.MetricValues)
 				totalsByDate[daily.Date] = total
 
 				campaignSpend += daily.Spend
@@ -118,6 +123,7 @@ func runCampaignsReport(ctx context.Context, client *appleads.Client, args []str
 				if daily.Installs != nil {
 					campaignInstalls += *daily.Installs
 				}
+				campaignMetrics = mergeMetricValues(campaignMetrics, daily.MetricValues)
 				if currencyCode == nil && daily.CurrencyCode != nil {
 					currencyCode = daily.CurrencyCode
 				}
@@ -137,7 +143,7 @@ func runCampaignsReport(ctx context.Context, client *appleads.Client, args []str
 			cr = float64(campaignInstalls) / float64(campaignTaps)
 		}
 
-		campaignRows = append(campaignRows, map[string]any{
+		campaignRow := map[string]any{
 			"campaignId":   campaign.ID,
 			"campaignName": campaign.Name,
 			"status":       campaign.Status,
@@ -148,7 +154,11 @@ func runCampaignsReport(ctx context.Context, client *appleads.Client, args []str
 			"cpt":          cpt,
 			"ttr":          ttr,
 			"cr":           cr,
-		})
+		}
+		if len(campaignMetrics) > 0 {
+			campaignRow["metrics"] = campaignMetrics
+		}
+		campaignRows = append(campaignRows, campaignRow)
 	}
 
 	days := make([]string, 0, len(totalsByDate))
@@ -185,6 +195,9 @@ func runCampaignsReport(ctx context.Context, client *appleads.Client, args []str
 			total["currency"] = *currencyCode
 		} else {
 			total["currency"] = nil
+		}
+		if len(t.metrics) > 0 {
+			total["metrics"] = t.metrics
 		}
 		totals = append(totals, total)
 	}
@@ -332,14 +345,14 @@ func runCampaignsUpdateBudget(ctx context.Context, client *appleads.Client, args
 		respondCommandError("campaigns", jsonOut, err)
 		return
 	}
-	budgetRaw := strings.TrimSpace(valueForFlag(args, "--budgetAmount"))
+	budgetRaw := firstNonEmptyString(valueForFlag(args, "--dailyBudgetAmount"), valueForFlag(args, "--budgetAmount"))
 	if budgetRaw == "" {
-		respondCommandError("campaigns", jsonOut, fmt.Errorf("Missing required --budgetAmount <number>"))
+		respondCommandError("campaigns", jsonOut, fmt.Errorf("Missing required --dailyBudgetAmount <number>"))
 		return
 	}
 	var budgetAmount float64
 	if _, scanErr := fmt.Sscanf(budgetRaw, "%f", &budgetAmount); scanErr != nil || budgetAmount <= 0 {
-		respondCommandError("campaigns", jsonOut, fmt.Errorf("Missing required --budgetAmount <number>"))
+		respondCommandError("campaigns", jsonOut, fmt.Errorf("Missing required --dailyBudgetAmount <number>"))
 		return
 	}
 	budgetCurrency := firstNonEmptyString(strings.TrimSpace(valueForFlag(args, "--budgetCurrency")), "GBP")
@@ -364,22 +377,85 @@ func runCampaignsUpdateBudget(ctx context.Context, client *appleads.Client, args
 	fmt.Printf("ok id=%d status=%s name=%s dailyBudget=%.4f %s\n", updated.ID, updated.Status, updated.Name, budgetAmount, strings.ToUpper(budgetCurrency))
 }
 
+func runCampaignsUpdateBiddingStrategy(ctx context.Context, client *appleads.Client, args []string, action string, jsonOut bool) {
+	campaignID, err := requiredIntFlag(args, "--campaignId")
+	if err != nil {
+		respondCommandError("campaigns", jsonOut, err)
+		return
+	}
+	strategy := strings.ToUpper(firstNonEmptyString(valueForFlag(args, "--biddingStrategy"), valueForFlag(args, "--strategy")))
+	if strategy == "" {
+		respondCommandError("campaigns", jsonOut, fmt.Errorf("Missing required --biddingStrategy MANUAL_CPT|MAX_CONVERSIONS"))
+		return
+	}
+	var targetCPA *float64
+	if raw := strings.TrimSpace(valueForFlag(args, "--targetCpa")); raw != "" {
+		v := 0.0
+		if _, scanErr := fmt.Sscanf(raw, "%f", &v); scanErr != nil || v <= 0 {
+			respondCommandError("campaigns", jsonOut, fmt.Errorf("Invalid --targetCpa %q", raw))
+			return
+		}
+		targetCPA = &v
+	}
+	currency := firstNonEmptyString(valueForFlag(args, "--targetCpaCurrency"), valueForFlag(args, "--currency"), valueForFlag(args, "--budgetCurrency"), "GBP")
+	updated, err := client.UpdateCampaignBiddingStrategy(ctx, campaignID, strategy, targetCPA, currency)
+	if err != nil {
+		respondCommandError("campaigns", jsonOut, err)
+		return
+	}
+	if jsonOut {
+		printJSON(map[string]any{
+			"ok":              true,
+			"id":              updated.ID,
+			"name":            updated.Name,
+			"status":          updated.Status,
+			"action":          action,
+			"biddingStrategy": updated.BiddingStrategy,
+			"targetCpa":       updated.TargetCPA,
+		})
+		return
+	}
+	fmt.Printf("ok id=%d status=%s name=%s biddingStrategy=%s\n", updated.ID, updated.Status, updated.Name, updated.BiddingStrategy)
+}
+
 func runCampaignsCreate(ctx context.Context, client *appleads.Client, args []string, jsonOut bool) {
 	name := strings.TrimSpace(valueForFlag(args, "--name"))
 	if name == "" {
 		respondCommandError("campaigns", jsonOut, fmt.Errorf("Missing required --name <campaign name>"))
 		return
 	}
-	budgetRaw := strings.TrimSpace(valueForFlag(args, "--budgetAmount"))
-	var budgetAmount float64
-	if _, err := fmt.Sscanf(budgetRaw, "%f", &budgetAmount); err != nil || budgetAmount <= 0 {
-		respondCommandError("campaigns", jsonOut, fmt.Errorf("Missing required --budgetAmount <number>"))
+	dailyBudgetRaw := firstNonEmptyString(valueForFlag(args, "--dailyBudgetAmount"), valueForFlag(args, "--budgetAmount"))
+	var dailyBudgetAmount float64
+	if _, err := fmt.Sscanf(dailyBudgetRaw, "%f", &dailyBudgetAmount); err != nil || dailyBudgetAmount <= 0 {
+		respondCommandError("campaigns", jsonOut, fmt.Errorf("Missing required --dailyBudgetAmount <number>"))
 		return
 	}
 	budgetCurrency := firstNonEmptyString(valueForFlag(args, "--budgetCurrency"), "GBP")
-	budgetType := firstNonEmptyString(valueForFlag(args, "--budgetType"), "DAILY")
+	var totalBudgetAmount *float64
+	if raw := strings.TrimSpace(valueForFlag(args, "--totalBudgetAmount")); raw != "" {
+		v := 0.0
+		if _, err := fmt.Sscanf(raw, "%f", &v); err != nil || v <= 0 {
+			respondCommandError("campaigns", jsonOut, fmt.Errorf("Invalid --totalBudgetAmount %q", raw))
+			return
+		}
+		totalBudgetAmount = &v
+	}
 	status := firstNonEmptyString(valueForFlag(args, "--status"), "ENABLED")
 	adamID := valueForFlag(args, "--adamId")
+	biddingStrategy := strings.ToUpper(strings.TrimSpace(valueForFlag(args, "--biddingStrategy")))
+	var targetCPA *float64
+	if raw := strings.TrimSpace(valueForFlag(args, "--targetCpa")); raw != "" {
+		v := 0.0
+		if _, err := fmt.Sscanf(raw, "%f", &v); err != nil || v <= 0 {
+			respondCommandError("campaigns", jsonOut, fmt.Errorf("Invalid --targetCpa %q", raw))
+			return
+		}
+		targetCPA = &v
+	}
+	if err := validateCampaignCreateBiddingFlags(args, biddingStrategy, targetCPA); err != nil {
+		respondCommandError("campaigns", jsonOut, err)
+		return
+	}
 
 	countriesValue := firstNonEmptyString(valueForFlag(args, "--countries"), "GB")
 	countries := []string{}
@@ -394,23 +470,70 @@ func runCampaignsCreate(ctx context.Context, client *appleads.Client, args []str
 		ctx,
 		name,
 		status,
-		budgetAmount,
+		dailyBudgetAmount,
 		budgetCurrency,
-		budgetType,
+		totalBudgetAmount,
 		adamID,
 		countries,
 		valueForFlag(args, "--startTime"),
 		valueForFlag(args, "--endTime"),
+		valueForFlag(args, "--supplySource"),
+		valueForFlag(args, "--adChannelType"),
+		biddingStrategy,
+		targetCPA,
+		firstNonEmptyString(valueForFlag(args, "--targetCpaCurrency"), budgetCurrency),
 	)
 	if err != nil {
 		respondCommandError("campaigns", jsonOut, err)
 		return
 	}
 	if jsonOut {
-		printJSON(map[string]any{"ok": true, "id": created.ID, "name": created.Name, "status": created.Status})
+		printJSON(map[string]any{
+			"ok":                true,
+			"id":                created.ID,
+			"name":              created.Name,
+			"status":            created.Status,
+			"biddingStrategy":   created.BiddingStrategy,
+			"targetCpa":         created.TargetCPA,
+			"dailyBudgetAmount": created.DailyBudgetAmount,
+			"budgetAmount":      created.BudgetAmount,
+			"supplySources":     created.SupplySources,
+			"adChannelType":     created.AdChannelType,
+		})
 		return
 	}
 	fmt.Printf("ok createdCampaign id=%d status=%s name=%s\n", created.ID, created.Status, created.Name)
+}
+
+func validateCampaignCreateBiddingFlags(args []string, biddingStrategy string, targetCPA *float64) error {
+	switch biddingStrategy {
+	case "":
+		if targetCPA != nil {
+			return fmt.Errorf("--targetCpa requires --biddingStrategy MAX_CONVERSIONS")
+		}
+		return nil
+	case "MANUAL_CPT":
+		if targetCPA != nil {
+			return fmt.Errorf("--targetCpa is only supported with --biddingStrategy MAX_CONVERSIONS")
+		}
+		return nil
+	case "MAX_CONVERSIONS":
+		if targetCPA == nil {
+			return fmt.Errorf("Missing required --targetCpa <number> for MAX_CONVERSIONS")
+		}
+		if rawSupplySources := splitCSVValues(valuesForFlag(args, "--supplySource")); len(rawSupplySources) > 0 {
+			supplySources := normalizeUpperValues(rawSupplySources)
+			if len(supplySources) != 1 || supplySources[0] != "APPSTORE_SEARCH_RESULTS" {
+				return fmt.Errorf("MAX_CONVERSIONS only supports --supplySource APPSTORE_SEARCH_RESULTS")
+			}
+		}
+		if adChannelType := strings.ToUpper(strings.TrimSpace(valueForFlag(args, "--adChannelType"))); adChannelType != "" && adChannelType != "SEARCH" {
+			return fmt.Errorf("MAX_CONVERSIONS requires --adChannelType SEARCH")
+		}
+		return nil
+	default:
+		return fmt.Errorf("Unsupported --biddingStrategy %s. Use MANUAL_CPT or MAX_CONVERSIONS", biddingStrategy)
+	}
 }
 
 func respondCommandError(command string, jsonOut bool, err error) {

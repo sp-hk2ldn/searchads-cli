@@ -8,18 +8,24 @@ All commands support `--json` unless otherwise noted.
 ## campaigns
 - `searchads campaigns list`
 - `searchads campaigns find [--campaignId <id> ...] [--adamId <id> ...] [--status ENABLED,PAUSED] [--nameContains text]`
-- `searchads campaigns create --name <name> --budgetAmount <number> [--budgetCurrency GBP] [--budgetType DAILY] [--status ENABLED] [--adamId <id>] [--countries GB,US] [--startTime RFC3339] [--endTime RFC3339]`
+- `searchads campaigns create --name <name> --dailyBudgetAmount <number> [--totalBudgetAmount <number>] [--budgetCurrency GBP] [--status ENABLED] [--adamId <id>] [--countries GB,US] [--startTime RFC3339] [--endTime RFC3339] [--supplySource APPSTORE_SEARCH_RESULTS,APPSTORE_SEARCH_TAB] [--adChannelType SEARCH] [--biddingStrategy MANUAL_CPT|MAX_CONVERSIONS] [--targetCpa <number>] [--targetCpaCurrency GBP]`
 - `searchads campaigns pause --campaignId <id>`
 - `searchads campaigns activate --campaignId <id>`
 - `searchads campaigns delete --campaignId <id>`
-- `searchads campaigns update-budget --campaignId <id> --budgetAmount <number> [--budgetCurrency GBP]`
-- `searchads campaigns set-budget --campaignId <id> --budgetAmount <number> [--budgetCurrency GBP]`
+- `searchads campaigns update-budget --campaignId <id> --dailyBudgetAmount <number> [--budgetCurrency GBP]`
+- `searchads campaigns set-budget --campaignId <id> --dailyBudgetAmount <number> [--budgetCurrency GBP]`
+- `searchads campaigns set-bidding-strategy --campaignId <id> --biddingStrategy MANUAL_CPT|MAX_CONVERSIONS [--targetCpa <number>] [--targetCpaCurrency GBP]`
 - `searchads campaigns report --startDate YYYY-MM-DD --endDate YYYY-MM-DD [--nameIncludes text] [--nameExcludes text] [--includePaused]`
+
+Notes:
+- `--budgetAmount` is still accepted as a backwards-compatible alias for `--dailyBudgetAmount` on create/update budget commands.
+- Apple Ads API 5.2.1 supports create-only campaign total budgets through `--totalBudgetAmount`.
+- `MAX_CONVERSIONS` requires `--targetCpa` and only supports `APPSTORE_SEARCH_RESULTS`.
 
 ## adgroups
 - `searchads adgroups list --campaignId <id>`
 - `searchads adgroups find --campaignId <id> [--adGroupId <id> ...] [--status ENABLED,PAUSED] [--nameContains text]`
-- `searchads adgroups create --campaignId <id> --name <name> --defaultBid <number> [--currency GBP] [--status ENABLED] [--automatedKeywordsOptIn]`
+- `searchads adgroups create --campaignId <id> --name <name> [--defaultBid <number>] [--currency GBP] [--status ENABLED] [--automatedKeywordsOptIn] [--automatedKeywordsRequired]`
 - `searchads adgroups pause --campaignId <id> --adGroupId <id>`
 - `searchads adgroups activate --campaignId <id> --adGroupId <id>`
 - `searchads adgroups delete --campaignId <id> --adGroupId <id>`
@@ -34,6 +40,7 @@ All commands support `--json` unless otherwise noted.
 - `searchads ads pause --campaignId <id> --adGroupId <id> --adId <id>`
 - `searchads ads activate --campaignId <id> --adGroupId <id> --adId <id>`
 - `searchads ads delete --campaignId <id> --adGroupId <id> --adId <id>`
+- `searchads ads report --campaignId <id> --startDate YYYY-MM-DD --endDate YYYY-MM-DD [--adId <id> ...] [--adGroupId <id> ...]`
 
 ## creatives
 - `searchads creatives list`
@@ -101,6 +108,12 @@ Outputs:
 - `searchads reports list [--state COMPLETED,FAILED] [--nameContains text] [--limit N]`
 - `searchads reports get --reportId <id>`
 - `searchads reports download --reportId <id> [--out reports/custom/<id>.csv]`
+
+## budget-orders
+- `searchads budget-orders list`
+- `searchads budget-orders get --budgetOrderId <id>`
+- `searchads budget-orders create --name <name> --budgetAmount <number> [--budgetCurrency GBP] [--orgId <id> ...] [--startDate RFC3339] [--endDate RFC3339] [--orderNumber text] [--clientName text] [--primaryBuyerName text] [--primaryBuyerEmail email] [--billingEmail email]`
+- `searchads budget-orders update --budgetOrderId <id> [--name <name>] [--budgetAmount <number>] [--budgetCurrency GBP] [--startDate RFC3339] [--endDate RFC3339] [--orderNumber text] [--clientName text] [--primaryBuyerName text] [--primaryBuyerEmail email] [--billingEmail email]`
 
 ## Useful examples
 ```bash

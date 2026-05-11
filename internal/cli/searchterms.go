@@ -73,6 +73,7 @@ func RunSearchTerms(ctx context.Context, client *appleads.Client, args []string,
 		installs    int
 		spend       float64
 		currency    *string
+		metrics     map[string]any
 	}
 	grouped := map[string]*agg{}
 
@@ -102,6 +103,7 @@ func RunSearchTerms(ctx context.Context, client *appleads.Client, args []string,
 			if entry.currency == nil {
 				entry.currency = row.CurrencyCode
 			}
+			entry.metrics = mergeMetricValues(entry.metrics, row.MetricValues)
 		}
 	}
 
@@ -135,6 +137,9 @@ func RunSearchTerms(ctx context.Context, client *appleads.Client, args []string,
 		} else {
 			row["currency"] = nil
 		}
+		if len(item.metrics) > 0 {
+			row["metrics"] = item.metrics
+		}
 		rows = append(rows, row)
 	}
 
@@ -162,12 +167,16 @@ func RunSearchTerms(ctx context.Context, client *appleads.Client, args []string,
 		taps        int
 		installs    int
 		spend       float64
+		metrics     map[string]any
 	}{}
 	for _, row := range filtered {
 		totals.impressions += row["impressions"].(int)
 		totals.taps += row["taps"].(int)
 		totals.installs += row["installs"].(int)
 		totals.spend += row["spend"].(float64)
+		if metrics, ok := row["metrics"].(map[string]any); ok {
+			totals.metrics = mergeMetricValues(totals.metrics, metrics)
+		}
 	}
 	cpt := 0.0
 	if totals.taps > 0 {
@@ -182,22 +191,26 @@ func RunSearchTerms(ctx context.Context, client *appleads.Client, args []string,
 		installRate = float64(totals.installs) / float64(totals.taps)
 	}
 
+	totalPayload := map[string]any{
+		"impressions": totals.impressions,
+		"taps":        totals.taps,
+		"installs":    totals.installs,
+		"spend":       totals.spend,
+		"cpt":         cpt,
+		"ttr":         ttr,
+		"installRate": installRate,
+	}
+	if len(totals.metrics) > 0 {
+		totalPayload["metrics"] = totals.metrics
+	}
 	payload := map[string]any{
 		"ok":           true,
 		"campaignId":   campaignID,
 		"adGroupCount": len(adGroupIDs),
 		"startDate":    startRaw,
 		"endDate":      endRaw,
-		"totals": map[string]any{
-			"impressions": totals.impressions,
-			"taps":        totals.taps,
-			"installs":    totals.installs,
-			"spend":       totals.spend,
-			"cpt":         cpt,
-			"ttr":         ttr,
-			"installRate": installRate,
-		},
-		"rows": filtered,
+		"totals":       totalPayload,
+		"rows":         filtered,
 	}
 
 	if jsonOut {

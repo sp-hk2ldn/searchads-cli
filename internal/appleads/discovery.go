@@ -49,7 +49,12 @@ type AppSummary struct {
 }
 
 type AppLocaleDetail struct {
-	Language string `json:"language"`
+	Language         string  `json:"language"`
+	AppName          string  `json:"appName,omitempty"`
+	SubTitle         *string `json:"subTitle,omitempty"`
+	ShortDescription *string `json:"shortDescription,omitempty"`
+	PromotionalText  *string `json:"promotionalText,omitempty"`
+	IsPrimaryLocale  bool    `json:"isPrimaryLocale,omitempty"`
 }
 
 type AppDetail struct {
@@ -63,12 +68,14 @@ type AppDetail struct {
 }
 
 type AppEligibilityRecord struct {
-	AdamID       int     `json:"adamId"`
-	Eligible     bool    `json:"eligible"`
-	MinAge       int     `json:"minAge"`
-	State        string  `json:"state"`
-	AppName      string  `json:"appName"`
-	SupplySource *string `json:"supplySource,omitempty"`
+	AdamID          int     `json:"adamId"`
+	Eligible        bool    `json:"eligible"`
+	MinAge          int     `json:"minAge"`
+	State           string  `json:"state"`
+	AppName         string  `json:"appName"`
+	CountryOrRegion string  `json:"countryOrRegion,omitempty"`
+	DeviceClass     string  `json:"deviceClass,omitempty"`
+	SupplySource    *string `json:"supplySource,omitempty"`
 }
 
 type GeoSearchEntity struct {
@@ -301,24 +308,23 @@ func (c *Client) FetchLocalizedAppDetails(ctx context.Context, adamID int) (*App
 	if err != nil {
 		return nil, err
 	}
-	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/apps/%d/localized-details", appleAdsAPIBase, adamID), auth)
+	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/apps/%d/locale-details", appleAdsAPIBase, adamID), auth)
 	if err != nil {
 		return nil, err
 	}
-	item := extractDataObject(payload)
-	detail, ok := parseAppDetail(item)
+	detail, ok := parseLocalizedAppDetailList(adamID, extractDataItems(payload))
 	if !ok {
 		return nil, fmt.Errorf("invalid localized app response payload")
 	}
 	return &detail, nil
 }
 
-func (c *Client) FindAppEligibility(ctx context.Context, selector map[string]any) ([]AppEligibilityRecord, error) {
+func (c *Client) FindAppEligibility(ctx context.Context, adamID int, selector map[string]any) ([]AppEligibilityRecord, error) {
 	auth, err := c.auth(ctx)
 	if err != nil {
 		return nil, err
 	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/app-eligibility/find", appleAdsAPIBase), auth, selector)
+	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/apps/%d/eligibilities/find", appleAdsAPIBase, adamID), auth, selector)
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +524,7 @@ func parseAppDetail(source map[string]any) (AppDetail, bool) {
 		if language == "" {
 			continue
 		}
-		details = append(details, AppLocaleDetail{Language: language})
+		details = append(details, parseAppLocaleDetail(item, language))
 	}
 	return AppDetail{
 		AdamID:          adamID,
@@ -531,18 +537,59 @@ func parseAppDetail(source map[string]any) (AppDetail, bool) {
 	}, true
 }
 
+func parseLocalizedAppDetailList(adamID int, items []any) (AppDetail, bool) {
+	if adamID <= 0 {
+		return AppDetail{}, false
+	}
+	details := make([]AppLocaleDetail, 0, len(items))
+	appName := ""
+	for _, itemAny := range items {
+		item := mapFromAny(itemAny)
+		language := strings.TrimSpace(stringFromAny(item["language"]))
+		if language == "" {
+			language = strings.TrimSpace(stringFromAny(item["languageCode"]))
+		}
+		if language == "" {
+			continue
+		}
+		detail := parseAppLocaleDetail(item, language)
+		if appName == "" && detail.AppName != "" {
+			appName = detail.AppName
+		}
+		if detail.IsPrimaryLocale && detail.AppName != "" {
+			appName = detail.AppName
+		}
+		details = append(details, detail)
+	}
+	return AppDetail{AdamID: adamID, AppName: appName, Details: details}, true
+}
+
+func parseAppLocaleDetail(item map[string]any, language string) AppLocaleDetail {
+	return AppLocaleDetail{
+		Language:         language,
+		AppName:          strings.TrimSpace(stringFromAny(item["appName"])),
+		SubTitle:         toStringPtr(item["subTitle"]),
+		ShortDescription: toStringPtr(item["shortDescription"]),
+		PromotionalText:  toStringPtr(item["promotionalText"]),
+		IsPrimaryLocale:  boolFromAny(item["isPrimaryLocale"]),
+	}
+}
+
 func parseAppEligibilityRecord(source map[string]any) (AppEligibilityRecord, bool) {
 	adamID := intFromAny(source["adamId"])
 	if adamID <= 0 {
 		return AppEligibilityRecord{}, false
 	}
+	state := strings.ToUpper(strings.TrimSpace(stringFromAny(source["state"])))
 	return AppEligibilityRecord{
-		AdamID:       adamID,
-		Eligible:     boolFromAny(source["eligible"]),
-		MinAge:       intFromAny(source["minAge"]),
-		State:        strings.ToUpper(strings.TrimSpace(stringFromAny(source["state"]))),
-		AppName:      strings.TrimSpace(firstNonEmptyString(stringFromAny(source["appName"]), stringFromAny(source["name"]))),
-		SupplySource: toStringPtr(source["supplySource"]),
+		AdamID:          adamID,
+		Eligible:        boolFromAny(source["eligible"]) || state == "ELIGIBLE",
+		MinAge:          intFromAny(source["minAge"]),
+		State:           state,
+		AppName:         strings.TrimSpace(firstNonEmptyString(stringFromAny(source["appName"]), stringFromAny(source["name"]))),
+		CountryOrRegion: strings.ToUpper(strings.TrimSpace(stringFromAny(source["countryOrRegion"]))),
+		DeviceClass:     strings.ToUpper(strings.TrimSpace(stringFromAny(source["deviceClass"]))),
+		SupplySource:    toStringPtr(source["supplySource"]),
 	}, true
 }
 

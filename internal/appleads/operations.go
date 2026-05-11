@@ -21,45 +21,48 @@ type NegativeKeywordSummary struct {
 }
 
 type AdGroupDailyReport struct {
-	Date         string  `json:"date"`
-	CampaignID   int     `json:"campaignId"`
-	AdGroupID    int     `json:"adGroupId"`
-	AdGroupName  string  `json:"adGroupName"`
-	Impressions  int     `json:"impressions"`
-	Taps         int     `json:"taps"`
-	Installs     *int    `json:"installs,omitempty"`
-	Spend        float64 `json:"spend"`
-	CPT          float64 `json:"cpt"`
-	CurrencyCode *string `json:"currencyCode,omitempty"`
+	Date         string         `json:"date"`
+	CampaignID   int            `json:"campaignId"`
+	AdGroupID    int            `json:"adGroupId"`
+	AdGroupName  string         `json:"adGroupName"`
+	Impressions  int            `json:"impressions"`
+	Taps         int            `json:"taps"`
+	Installs     *int           `json:"installs,omitempty"`
+	Spend        float64        `json:"spend"`
+	CPT          float64        `json:"cpt"`
+	CurrencyCode *string        `json:"currencyCode,omitempty"`
+	MetricValues map[string]any `json:"metrics,omitempty"`
 }
 
 type SearchTermDailyReport struct {
-	Date           string  `json:"date"`
-	CampaignID     int     `json:"campaignId"`
-	AdGroupID      int     `json:"adGroupId"`
-	SearchTermText string  `json:"searchTermText"`
-	Impressions    int     `json:"impressions"`
-	Taps           int     `json:"taps"`
-	Installs       *int    `json:"installs,omitempty"`
-	Spend          float64 `json:"spend"`
-	CPT            float64 `json:"cpt"`
-	CurrencyCode   *string `json:"currencyCode,omitempty"`
+	Date           string         `json:"date"`
+	CampaignID     int            `json:"campaignId"`
+	AdGroupID      int            `json:"adGroupId"`
+	SearchTermText string         `json:"searchTermText"`
+	Impressions    int            `json:"impressions"`
+	Taps           int            `json:"taps"`
+	Installs       *int           `json:"installs,omitempty"`
+	Spend          float64        `json:"spend"`
+	CPT            float64        `json:"cpt"`
+	CurrencyCode   *string        `json:"currencyCode,omitempty"`
+	MetricValues   map[string]any `json:"metrics,omitempty"`
 }
 
 type KeywordDailyReport struct {
-	Date         string  `json:"date"`
-	CampaignID   int     `json:"campaignId"`
-	AdGroupID    int     `json:"adGroupId"`
-	KeywordID    int     `json:"keywordId"`
-	KeywordText  string  `json:"keywordText"`
-	MatchType    string  `json:"matchType"`
-	Status       string  `json:"status"`
-	Impressions  int     `json:"impressions"`
-	Taps         int     `json:"taps"`
-	Installs     *int    `json:"installs,omitempty"`
-	Spend        float64 `json:"spend"`
-	CPT          float64 `json:"cpt"`
-	CurrencyCode *string `json:"currencyCode,omitempty"`
+	Date         string         `json:"date"`
+	CampaignID   int            `json:"campaignId"`
+	AdGroupID    int            `json:"adGroupId"`
+	KeywordID    int            `json:"keywordId"`
+	KeywordText  string         `json:"keywordText"`
+	MatchType    string         `json:"matchType"`
+	Status       string         `json:"status"`
+	Impressions  int            `json:"impressions"`
+	Taps         int            `json:"taps"`
+	Installs     *int           `json:"installs,omitempty"`
+	Spend        float64        `json:"spend"`
+	CPT          float64        `json:"cpt"`
+	CurrencyCode *string        `json:"currencyCode,omitempty"`
+	MetricValues map[string]any `json:"metrics,omitempty"`
 }
 
 type AdSummary struct {
@@ -75,6 +78,26 @@ type AdSummary struct {
 	Deleted             bool     `json:"deleted"`
 	CreationTime        *string  `json:"creationTime,omitempty"`
 	ModificationTime    *string  `json:"modificationTime,omitempty"`
+}
+
+type AdDailyReport struct {
+	Date          string         `json:"date"`
+	CampaignID    int            `json:"campaignId"`
+	AdGroupID     int            `json:"adGroupId"`
+	AdID          int            `json:"adId"`
+	AdName        string         `json:"adName"`
+	CreativeID    int            `json:"creativeId"`
+	CreativeType  string         `json:"creativeType"`
+	Status        string         `json:"status"`
+	DisplayStatus string         `json:"displayStatus,omitempty"`
+	ProductPageID *string        `json:"productPageId,omitempty"`
+	Impressions   int            `json:"impressions"`
+	Taps          int            `json:"taps"`
+	Installs      *int           `json:"installs,omitempty"`
+	Spend         float64        `json:"spend"`
+	CPT           float64        `json:"cpt"`
+	CurrencyCode  *string        `json:"currencyCode,omitempty"`
+	MetricValues  map[string]any `json:"metrics,omitempty"`
 }
 
 type CreativeSummary struct {
@@ -106,25 +129,48 @@ type CustomReport struct {
 	DateRange        *string  `json:"dateRange,omitempty"`
 }
 
+type BudgetOrderSummary struct {
+	ID                int          `json:"id"`
+	Name              string       `json:"name"`
+	Status            string       `json:"status,omitempty"`
+	StartDate         *string      `json:"startDate,omitempty"`
+	EndDate           *string      `json:"endDate,omitempty"`
+	Budget            *MoneyAmount `json:"budget,omitempty"`
+	OrderNumber       *string      `json:"orderNumber,omitempty"`
+	ClientName        *string      `json:"clientName,omitempty"`
+	PrimaryBuyerName  *string      `json:"primaryBuyerName,omitempty"`
+	PrimaryBuyerEmail *string      `json:"primaryBuyerEmail,omitempty"`
+	BillingEmail      *string      `json:"billingEmail,omitempty"`
+	ParentOrgID       int          `json:"parentOrgId,omitempty"`
+	OrgIDs            []int        `json:"orgIds,omitempty"`
+	SupplySources     []string     `json:"supplySources,omitempty"`
+}
+
 type parsedMetrics struct {
 	impressions int
 	taps        int
 	installs    *int
 	spend       float64
 	currency    *string
+	values      map[string]any
 }
 
 func (c *Client) CreateCampaign(
 	ctx context.Context,
 	name string,
 	status string,
-	budgetAmount float64,
+	dailyBudgetAmount float64,
 	budgetCurrency string,
-	budgetType string,
+	totalBudgetAmount *float64,
 	adamID string,
 	countries []string,
 	startTime string,
 	endTime string,
+	supplySource string,
+	adChannelType string,
+	biddingStrategy string,
+	targetCPA *float64,
+	targetCPACurrency string,
 ) (*CampaignSummary, error) {
 	auth, err := c.auth(ctx)
 	if err != nil {
@@ -143,24 +189,44 @@ func (c *Client) CreateCampaign(
 		resolvedStartTime = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 
+	supplySources := normalizeNonEmptyUpper(strings.Split(supplySource, ","))
+	if len(supplySources) == 0 {
+		supplySources = []string{"APPSTORE_SEARCH_RESULTS"}
+	}
+	normalizedAdChannelType := firstNonEmptyString(strings.ToUpper(strings.TrimSpace(adChannelType)), "SEARCH")
+	normalizedBiddingStrategy := strings.ToUpper(strings.TrimSpace(biddingStrategy))
+	if err := validateCampaignBiddingStrategy(normalizedBiddingStrategy, targetCPA, supplySources, normalizedAdChannelType); err != nil {
+		return nil, err
+	}
 	body := map[string]any{
 		"orgId":         auth.orgID,
 		"name":          name,
 		"status":        status,
-		"adChannelType": "SEARCH",
-		"supplySources": []string{"APPSTORE_SEARCH_RESULTS"},
+		"adChannelType": normalizedAdChannelType,
+		"supplySources": supplySources,
 		"billingEvent":  "TAPS",
 		"paymentModel":  "PAYG",
 		"startTime":     resolvedStartTime,
 		"dailyBudgetAmount": map[string]any{
-			"amount":   fmt.Sprintf("%.4f", budgetAmount),
+			"amount":   fmt.Sprintf("%.4f", dailyBudgetAmount),
 			"currency": budgetCurrency,
 		},
 	}
 
-	normalizedBudgetType := strings.ToUpper(strings.TrimSpace(budgetType))
-	if normalizedBudgetType != "" && normalizedBudgetType != "DAILY" {
-		body["budgetType"] = normalizedBudgetType
+	if totalBudgetAmount != nil && *totalBudgetAmount > 0 {
+		body["budgetAmount"] = map[string]any{
+			"amount":   fmt.Sprintf("%.4f", *totalBudgetAmount),
+			"currency": budgetCurrency,
+		}
+	}
+	if normalizedBiddingStrategy != "" {
+		body["biddingStrategy"] = normalizedBiddingStrategy
+	}
+	if targetCPA != nil && *targetCPA > 0 {
+		body["targetCpa"] = map[string]any{
+			"amount":   fmt.Sprintf("%.4f", *targetCPA),
+			"currency": firstNonEmptyString(strings.TrimSpace(targetCPACurrency), budgetCurrency),
+		}
 	}
 	if resolvedAdamID != "" {
 		if parsed := intFromAny(resolvedAdamID); parsed > 0 {
@@ -178,17 +244,9 @@ func (c *Client) CreateCampaign(
 	if err != nil {
 		return nil, err
 	}
-	item := mapFromAny(payload["data"])
+	item := extractDataObject(payload)
 	id := intFromAny(item["id"])
-	createdName := strings.TrimSpace(stringFromAny(item["name"]))
-	if createdName == "" {
-		createdName = name
-	}
-	createdStatus := strings.ToUpper(strings.TrimSpace(stringFromAny(item["status"])))
-	if createdStatus == "" {
-		createdStatus = strings.ToUpper(strings.TrimSpace(status))
-	}
-	return &CampaignSummary{ID: id, Name: createdName, Status: createdStatus}, nil
+	return ptrCampaignSummary(parseCampaignSummary(item, id, name)), nil
 }
 
 func (c *Client) UpdateCampaignStatus(ctx context.Context, campaignID int, status string) (*CampaignSummary, error) {
@@ -210,19 +268,11 @@ func (c *Client) UpdateCampaignStatus(ctx context.Context, campaignID int, statu
 	if len(item) == 0 {
 		item = payload
 	}
-	id := intFromAny(item["id"])
-	if id <= 0 {
-		id = campaignID
+	summary := parseCampaignSummary(item, campaignID, "")
+	if summary.Status == "" {
+		summary.Status = normalized
 	}
-	name := strings.TrimSpace(stringFromAny(item["name"]))
-	if name == "" {
-		name = fmt.Sprintf("Campaign %d", id)
-	}
-	resolvedStatus := strings.ToUpper(strings.TrimSpace(stringFromAny(item["status"])))
-	if resolvedStatus == "" {
-		resolvedStatus = normalized
-	}
-	return &CampaignSummary{ID: id, Name: name, Status: resolvedStatus}, nil
+	return &summary, nil
 }
 
 func (c *Client) DeleteCampaign(ctx context.Context, campaignID int) error {
@@ -277,16 +327,81 @@ func (c *Client) UpdateCampaignDailyBudget(ctx context.Context, campaignID int, 
 	if len(item) == 0 {
 		item = payload
 	}
-	id := intFromAny(item["id"])
-	if id <= 0 {
-		id = campaignID
+	return ptrCampaignSummary(parseCampaignSummary(item, campaignID, "")), nil
+}
+
+func (c *Client) UpdateCampaignBiddingStrategy(ctx context.Context, campaignID int, biddingStrategy string, targetCPA *float64, currency string) (*CampaignSummary, error) {
+	auth, err := c.auth(ctx)
+	if err != nil {
+		return nil, err
 	}
-	name := strings.TrimSpace(stringFromAny(item["name"]))
-	if name == "" {
-		name = fmt.Sprintf("Campaign %d", id)
+	normalized := strings.ToUpper(strings.TrimSpace(biddingStrategy))
+	if normalized == "" {
+		return nil, fmt.Errorf("missing bidding strategy")
 	}
-	resolvedStatus := strings.ToUpper(strings.TrimSpace(stringFromAny(item["status"])))
-	return &CampaignSummary{ID: id, Name: name, Status: resolvedStatus}, nil
+	if normalized != "MANUAL_CPT" && normalized != "MAX_CONVERSIONS" {
+		return nil, fmt.Errorf("unsupported bidding strategy %q", biddingStrategy)
+	}
+	campaign := map[string]any{"biddingStrategy": normalized}
+	if normalized == "MAX_CONVERSIONS" {
+		if targetCPA == nil || *targetCPA <= 0 {
+			return nil, fmt.Errorf("target CPA is required for MAX_CONVERSIONS")
+		}
+		campaign["targetCpa"] = map[string]any{
+			"amount":   fmt.Sprintf("%.4f", *targetCPA),
+			"currency": firstNonEmptyString(strings.ToUpper(strings.TrimSpace(currency)), "USD"),
+		}
+	} else if normalized == "MANUAL_CPT" {
+		if targetCPA != nil {
+			return nil, fmt.Errorf("target CPA is only supported for MAX_CONVERSIONS")
+		}
+		campaign["targetCpa"] = nil
+	}
+	payload, err := c.putJSON(
+		ctx,
+		fmt.Sprintf("%s/campaigns/%d", appleAdsAPIBase, campaignID),
+		auth,
+		map[string]any{
+			"clearGeoTargetingOnCountryOrRegionChange": false,
+			"campaign": campaign,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	item := mapFromAny(payload["data"])
+	if len(item) == 0 {
+		item = payload
+	}
+	return ptrCampaignSummary(parseCampaignSummary(item, campaignID, "")), nil
+}
+
+func validateCampaignBiddingStrategy(strategy string, targetCPA *float64, supplySources []string, adChannelType string) error {
+	switch strategy {
+	case "":
+		if targetCPA != nil {
+			return fmt.Errorf("target CPA is only supported for MAX_CONVERSIONS")
+		}
+		return nil
+	case "MANUAL_CPT":
+		if targetCPA != nil {
+			return fmt.Errorf("target CPA is only supported for MAX_CONVERSIONS")
+		}
+		return nil
+	case "MAX_CONVERSIONS":
+		if targetCPA == nil || *targetCPA <= 0 {
+			return fmt.Errorf("target CPA is required for MAX_CONVERSIONS")
+		}
+		if strings.ToUpper(strings.TrimSpace(adChannelType)) != "SEARCH" {
+			return fmt.Errorf("MAX_CONVERSIONS requires adChannelType SEARCH")
+		}
+		if len(supplySources) != 1 || supplySources[0] != "APPSTORE_SEARCH_RESULTS" {
+			return fmt.Errorf("MAX_CONVERSIONS only supports APPSTORE_SEARCH_RESULTS supply source")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported bidding strategy %q", strategy)
+	}
 }
 
 func (c *Client) CreateAdGroup(
@@ -294,9 +409,10 @@ func (c *Client) CreateAdGroup(
 	campaignID int,
 	name string,
 	status string,
-	defaultBid float64,
+	defaultBid *float64,
 	currency string,
 	automatedKeywordsOptIn *bool,
+	automatedKeywordsRequired *bool,
 ) (*AdGroupSummary, error) {
 	auth, err := c.auth(ctx)
 	if err != nil {
@@ -308,42 +424,38 @@ func (c *Client) CreateAdGroup(
 		"name":         name,
 		"status":       status,
 		"pricingModel": "CPC",
-		"defaultBidAmount": map[string]any{
-			"amount":   fmt.Sprintf("%.4f", defaultBid),
+		"startTime":    time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if defaultBid != nil && *defaultBid > 0 {
+		body["defaultBidAmount"] = map[string]any{
+			"amount":   fmt.Sprintf("%.4f", *defaultBid),
 			"currency": currency,
-		},
-		"startTime": time.Now().UTC().Format(time.RFC3339Nano),
+		}
 	}
 	if automatedKeywordsOptIn != nil {
 		body["automatedKeywordsOptIn"] = *automatedKeywordsOptIn
+	}
+	if automatedKeywordsRequired != nil {
+		body["automatedKeywordsRequired"] = *automatedKeywordsRequired
 	}
 	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/campaigns/%d/adgroups", appleAdsAPIBase, campaignID), auth, body)
 	if err != nil {
 		return nil, err
 	}
-	item := mapFromAny(payload["data"])
-	id := intFromAny(item["id"])
-	if id <= 0 {
-		id = intFromAny(item["adGroupId"])
+	item := extractDataObject(payload)
+	summary := parseAdGroupSummary(item, 0, name)
+	if summary.Status == "" {
+		summary.Status = strings.ToUpper(strings.TrimSpace(status))
 	}
-	createdName := strings.TrimSpace(stringFromAny(item["name"]))
-	if createdName == "" {
-		createdName = name
+	if summary.DefaultBid == nil && defaultBid != nil {
+		v := *defaultBid
+		summary.DefaultBid = &v
 	}
-	createdStatus := strings.ToUpper(strings.TrimSpace(stringFromAny(item["status"])))
-	if createdStatus == "" {
-		createdStatus = strings.ToUpper(strings.TrimSpace(status))
-	}
-	bid, ccy := parseBid(mapFromAny(item["defaultBidAmount"]), mapFromAny(item["defaultCpcBid"]))
-	if bid == nil {
-		v := defaultBid
-		bid = &v
-	}
-	if ccy == nil {
+	if summary.Currency == nil && strings.TrimSpace(currency) != "" {
 		curr := currency
-		ccy = &curr
+		summary.Currency = &curr
 	}
-	return &AdGroupSummary{ID: id, Name: createdName, Status: createdStatus, DefaultBid: bid, Currency: ccy}, nil
+	return &summary, nil
 }
 
 func (c *Client) UpdateAdGroupStatus(ctx context.Context, campaignID, adGroupID int, status string) (*AdGroupSummary, error) {
@@ -365,23 +477,11 @@ func (c *Client) UpdateAdGroupStatus(ctx context.Context, campaignID, adGroupID 
 	if len(item) == 0 {
 		item = payload
 	}
-	id := intFromAny(item["id"])
-	if id <= 0 {
-		id = intFromAny(item["adGroupId"])
+	summary := parseAdGroupSummary(item, adGroupID, "")
+	if summary.Status == "" {
+		summary.Status = normalized
 	}
-	if id <= 0 {
-		id = adGroupID
-	}
-	name := strings.TrimSpace(stringFromAny(item["name"]))
-	if name == "" {
-		name = fmt.Sprintf("Ad Group %d", id)
-	}
-	resolvedStatus := strings.ToUpper(strings.TrimSpace(stringFromAny(item["status"])))
-	if resolvedStatus == "" {
-		resolvedStatus = normalized
-	}
-	bid, ccy := parseBid(mapFromAny(item["defaultBidAmount"]), mapFromAny(item["defaultCpcBid"]))
-	return &AdGroupSummary{ID: id, Name: name, Status: resolvedStatus, DefaultBid: bid, Currency: ccy}, nil
+	return &summary, nil
 }
 
 func (c *Client) DeleteAdGroup(ctx context.Context, campaignID, adGroupID int) error {
@@ -936,6 +1036,7 @@ func (c *Client) FetchAdGroupDailyMetrics(ctx context.Context, startDate, endDat
 					Spend:        metrics.spend,
 					CPT:          cpt,
 					CurrencyCode: metrics.currency,
+					MetricValues: metrics.values,
 				})
 			}
 			continue
@@ -959,6 +1060,7 @@ func (c *Client) FetchAdGroupDailyMetrics(ctx context.Context, startDate, endDat
 			Spend:        metrics.spend,
 			CPT:          cpt,
 			CurrencyCode: metrics.currency,
+			MetricValues: metrics.values,
 		})
 	}
 
@@ -1047,6 +1149,7 @@ func (c *Client) FetchKeywordDailyMetrics(ctx context.Context, startDate, endDat
 					Spend:        metrics.spend,
 					CPT:          cpt,
 					CurrencyCode: metrics.currency,
+					MetricValues: metrics.values,
 				})
 			}
 			continue
@@ -1073,6 +1176,7 @@ func (c *Client) FetchKeywordDailyMetrics(ctx context.Context, startDate, endDat
 			Spend:        metrics.spend,
 			CPT:          cpt,
 			CurrencyCode: metrics.currency,
+			MetricValues: metrics.values,
 		})
 	}
 
@@ -1143,6 +1247,7 @@ func (c *Client) FetchSearchTermDailyMetrics(ctx context.Context, startDate, end
 					Spend:          metrics.spend,
 					CPT:            cpt,
 					CurrencyCode:   metrics.currency,
+					MetricValues:   metrics.values,
 				})
 			}
 			continue
@@ -1166,11 +1271,128 @@ func (c *Client) FetchSearchTermDailyMetrics(ctx context.Context, startDate, end
 			Spend:          metrics.spend,
 			CPT:            cpt,
 			CurrencyCode:   metrics.currency,
+			MetricValues:   metrics.values,
 		})
 	}
 
 	sort.Slice(results, func(i, j int) bool { return results[i].Date < results[j].Date })
 	return results, nil
+}
+
+func (c *Client) FetchAdDailyMetrics(ctx context.Context, startDate, endDate time.Time, campaignID int, adIDFilters []int, adGroupIDFilters []int) ([]AdDailyReport, error) {
+	auth, err := c.auth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	start := dateOnly(startDate)
+	end := dateOnly(endDate)
+
+	conditions := make([]any, 0, 2)
+	if len(adIDFilters) > 0 {
+		conditions = append(conditions, map[string]any{"field": "adId", "operator": operatorForIntFilters(adIDFilters), "values": intFiltersToStrings(adIDFilters)})
+	}
+	if len(adGroupIDFilters) > 0 {
+		conditions = append(conditions, map[string]any{"field": "adGroupId", "operator": operatorForIntFilters(adGroupIDFilters), "values": intFiltersToStrings(adGroupIDFilters)})
+	}
+	body := map[string]any{
+		"startTime":   start,
+		"endTime":     end,
+		"granularity": "DAILY",
+		"selector": map[string]any{
+			"orderBy":    []any{map[string]any{"field": "creativeType", "sortOrder": "ASCENDING"}},
+			"conditions": conditions,
+			"pagination": map[string]any{"offset": 0, "limit": 1000},
+		},
+		"timeZone":                   "UTC",
+		"returnRecordsWithNoMetrics": false,
+		"returnRowTotals":            true,
+		"returnGrandTotals":          false,
+	}
+
+	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/reports/campaigns/%d/ads", appleAdsAPIBase, campaignID), auth, body)
+	if err != nil {
+		return nil, err
+	}
+	rows := getReportRows(payload)
+	results := make([]AdDailyReport, 0, len(rows)*2)
+	for _, rowAny := range rows {
+		row := mapFromAny(rowAny)
+		meta := mapFromAny(row["metadata"])
+		adID := intFromAny(firstNonEmptyAny(meta["adId"], meta["id"]))
+		if adID <= 0 {
+			continue
+		}
+		adGroupID := intFromAny(meta["adGroupId"])
+		adName := strings.TrimSpace(firstNonEmptyString(stringFromAny(meta["adName"]), stringFromAny(meta["name"])))
+		if adName == "" {
+			adName = fmt.Sprintf("Ad %d", adID)
+		}
+
+		if granular, ok := row["granularity"].([]any); ok && len(granular) > 0 {
+			for _, entryAny := range granular {
+				entry := mapFromAny(entryAny)
+				date := normalizeDateKey(firstNonEmptyString(stringFromAny(entry["date"]), start))
+				metrics := parseMetrics(entry)
+				results = append(results, adDailyReportFromMetrics(date, campaignID, adGroupID, adID, adName, meta, metrics))
+			}
+			continue
+		}
+
+		rawDate := firstNonEmptyString(stringFromAny(meta["date"]), stringFromAny(row["date"]), start)
+		metrics := parseMetrics(mapFromAny(row["total"]))
+		results = append(results, adDailyReportFromMetrics(normalizeDateKey(rawDate), campaignID, adGroupID, adID, adName, meta, metrics))
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Date == results[j].Date {
+			return results[i].AdID < results[j].AdID
+		}
+		return results[i].Date < results[j].Date
+	})
+	return results, nil
+}
+
+func adDailyReportFromMetrics(date string, campaignID, adGroupID, adID int, adName string, meta map[string]any, metrics parsedMetrics) AdDailyReport {
+	cpt := 0.0
+	if metrics.taps > 0 {
+		cpt = metrics.spend / float64(metrics.taps)
+	}
+	return AdDailyReport{
+		Date:          date,
+		CampaignID:    campaignID,
+		AdGroupID:     adGroupID,
+		AdID:          adID,
+		AdName:        adName,
+		CreativeID:    intFromAny(meta["creativeId"]),
+		CreativeType:  strings.ToUpper(strings.TrimSpace(stringFromAny(meta["creativeType"]))),
+		Status:        strings.ToUpper(strings.TrimSpace(stringFromAny(meta["status"]))),
+		DisplayStatus: strings.ToUpper(strings.TrimSpace(stringFromAny(meta["displayStatus"]))),
+		ProductPageID: toStringPtr(meta["productPageId"]),
+		Impressions:   metrics.impressions,
+		Taps:          metrics.taps,
+		Installs:      metrics.installs,
+		Spend:         metrics.spend,
+		CPT:           cpt,
+		CurrencyCode:  metrics.currency,
+		MetricValues:  metrics.values,
+	}
+}
+
+func operatorForIntFilters(values []int) string {
+	if len(values) > 1 {
+		return "IN"
+	}
+	return "EQUALS"
+}
+
+func intFiltersToStrings(values []int) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value > 0 {
+			out = append(out, fmt.Sprintf("%d", value))
+		}
+	}
+	return out
 }
 
 func (c *Client) CreateImpressionShareReport(
@@ -1304,6 +1526,78 @@ func (c *Client) FetchCustomReports(ctx context.Context) ([]CustomReport, error)
 
 	sort.Slice(results, func(i, j int) bool { return results[i].ID > results[j].ID })
 	return results, nil
+}
+
+func (c *Client) FetchBudgetOrders(ctx context.Context) ([]BudgetOrderSummary, error) {
+	auth, err := c.auth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/budgetorders", appleAdsAPIBase), auth)
+	if err != nil {
+		return nil, err
+	}
+	items := extractDataItems(payload)
+	results := make([]BudgetOrderSummary, 0, len(items))
+	for _, itemAny := range items {
+		if summary, ok := parseBudgetOrderSummary(mapFromAny(itemAny)); ok {
+			results = append(results, summary)
+		}
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
+	return results, nil
+}
+
+func (c *Client) FetchBudgetOrder(ctx context.Context, budgetOrderID int) (*BudgetOrderSummary, error) {
+	auth, err := c.auth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/budgetorders/%d", appleAdsAPIBase, budgetOrderID), auth)
+	if err != nil {
+		return nil, err
+	}
+	summary, ok := parseBudgetOrderSummary(extractDataObject(payload))
+	if !ok {
+		return nil, fmt.Errorf("invalid budget order response payload")
+	}
+	return &summary, nil
+}
+
+func (c *Client) CreateBudgetOrder(ctx context.Context, order BudgetOrderSummary, orgIDs []int) (*BudgetOrderSummary, error) {
+	auth, err := c.auth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]any{
+		"orgIds": orgIDsOrDefault(orgIDs, auth.orgID),
+		"bo":     budgetOrderRequestBody(order),
+	}
+	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/budgetorders", appleAdsAPIBase), auth, body)
+	if err != nil {
+		return nil, err
+	}
+	summary, ok := parseBudgetOrderSummary(extractDataObject(payload))
+	if !ok {
+		return nil, fmt.Errorf("invalid budget order response payload")
+	}
+	return &summary, nil
+}
+
+func (c *Client) UpdateBudgetOrder(ctx context.Context, budgetOrderID int, order BudgetOrderSummary) (*BudgetOrderSummary, error) {
+	auth, err := c.auth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := c.putJSON(ctx, fmt.Sprintf("%s/budgetorders/%d", appleAdsAPIBase, budgetOrderID), auth, map[string]any{"bo": budgetOrderRequestBody(order)})
+	if err != nil {
+		return nil, err
+	}
+	summary, ok := parseBudgetOrderSummary(extractDataObject(payload))
+	if !ok {
+		return nil, fmt.Errorf("invalid budget order response payload")
+	}
+	return &summary, nil
 }
 
 func (c *Client) DownloadCustomReport(ctx context.Context, downloadURI string) ([]byte, error) {
@@ -1685,7 +1979,60 @@ func parseMetrics(source map[string]any) parsedMetrics {
 		c := currencyRaw
 		currency = &c
 	}
-	return parsedMetrics{impressions: impressions, taps: taps, installs: installs, spend: spend, currency: currency}
+	values := collectReportMetricValues(source)
+	return parsedMetrics{impressions: impressions, taps: taps, installs: installs, spend: spend, currency: currency, values: values}
+}
+
+func collectReportMetricValues(source map[string]any) map[string]any {
+	fields := []string{
+		"impressions",
+		"taps",
+		"tapInstalls",
+		"viewInstalls",
+		"totalInstalls",
+		"tapNewDownloads",
+		"viewNewDownloads",
+		"totalNewDownloads",
+		"tapRedownloads",
+		"viewRedownloads",
+		"totalRedownloads",
+		"tapPreOrdersPlaced",
+		"viewPreOrdersPlaced",
+		"totalPreOrdersPlaced",
+	}
+	values := map[string]any{}
+	for _, field := range fields {
+		if raw, ok := source[field]; ok {
+			values[field] = intFromAny(raw)
+		}
+	}
+	for _, field := range []string{"avgCPM", "avgCPT", "tapInstallCPI", "totalAvgCPI"} {
+		if raw, ok := source[field]; ok {
+			if money := mapFromAny(raw); len(money) > 0 {
+				values[field] = map[string]any{
+					"amount":   floatFromAny(money["amount"]),
+					"currency": strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringFromAny(money["currency"]), stringFromAny(money["currencyCode"])))),
+				}
+			} else {
+				values[field] = floatFromAny(raw)
+			}
+		}
+	}
+	for _, field := range []string{"tapInstallRate", "totalInstallRate", "conversionRate", "ttr"} {
+		if raw, ok := source[field]; ok {
+			values[field] = floatFromAny(raw)
+		}
+	}
+	if localSpend := mapFromAny(source["localSpend"]); len(localSpend) > 0 {
+		values["localSpend"] = map[string]any{
+			"amount":   floatFromAny(localSpend["amount"]),
+			"currency": strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringFromAny(localSpend["currency"]), stringFromAny(localSpend["currencyCode"])))),
+		}
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	return values
 }
 
 func parseCustomReport(source map[string]any) *CustomReport {
@@ -1718,6 +2065,176 @@ func parseCustomReport(source map[string]any) *CustomReport {
 		ModificationTime: toStringPtr(source["modificationTime"]),
 		DateRange:        toStringPtr(source["dateRange"]),
 	}
+}
+
+func ptrCampaignSummary(summary CampaignSummary) *CampaignSummary {
+	return &summary
+}
+
+func parseCampaignSummary(source map[string]any, fallbackID int, fallbackName string) CampaignSummary {
+	id := intFromAny(source["id"])
+	if id <= 0 {
+		id = fallbackID
+	}
+	name := strings.TrimSpace(stringFromAny(source["name"]))
+	if name == "" {
+		name = strings.TrimSpace(fallbackName)
+	}
+	if name == "" && id > 0 {
+		name = fmt.Sprintf("Campaign %d", id)
+	}
+	return CampaignSummary{
+		ID:                  id,
+		AdamID:              intFromAny(source["adamId"]),
+		Name:                name,
+		Status:              strings.ToUpper(strings.TrimSpace(stringFromAny(source["status"]))),
+		DisplayStatus:       strings.ToUpper(strings.TrimSpace(stringFromAny(source["displayStatus"]))),
+		ServingStatus:       strings.ToUpper(strings.TrimSpace(stringFromAny(source["servingStatus"]))),
+		ServingStateReasons: toStringSlice(source["servingStateReasons"]),
+		BiddingStrategy:     strings.ToUpper(strings.TrimSpace(stringFromAny(source["biddingStrategy"]))),
+		TargetCPA:           parseMoneyAmount(mapFromAny(source["targetCpa"])),
+		DailyBudgetAmount:   parseMoneyAmount(mapFromAny(source["dailyBudgetAmount"])),
+		BudgetAmount:        parseMoneyAmount(mapFromAny(source["budgetAmount"])),
+		SupplySources:       toStringSlice(source["supplySources"]),
+		AdChannelType:       strings.ToUpper(strings.TrimSpace(stringFromAny(source["adChannelType"]))),
+	}
+}
+
+func parseAdGroupSummary(source map[string]any, fallbackID int, fallbackName string) AdGroupSummary {
+	id := intFromAny(source["id"])
+	if id <= 0 {
+		id = intFromAny(source["adGroupId"])
+	}
+	if id <= 0 {
+		id = fallbackID
+	}
+	name := strings.TrimSpace(stringFromAny(source["name"]))
+	if name == "" {
+		name = strings.TrimSpace(fallbackName)
+	}
+	if name == "" && id > 0 {
+		name = fmt.Sprintf("Ad Group %d", id)
+	}
+	bid, ccy := parseBid(mapFromAny(source["defaultBidAmount"]), mapFromAny(source["defaultCpcBid"]))
+	return AdGroupSummary{
+		ID:                        id,
+		CampaignID:                intFromAny(source["campaignId"]),
+		Name:                      name,
+		Status:                    strings.ToUpper(strings.TrimSpace(stringFromAny(source["status"]))),
+		DisplayStatus:             strings.ToUpper(strings.TrimSpace(stringFromAny(source["displayStatus"]))),
+		ServingStatus:             strings.ToUpper(strings.TrimSpace(stringFromAny(source["servingStatus"]))),
+		ServingStateReasons:       toStringSlice(source["servingStateReasons"]),
+		DefaultBid:                bid,
+		Currency:                  ccy,
+		BiddingStrategy:           strings.ToUpper(strings.TrimSpace(stringFromAny(source["biddingStrategy"]))),
+		AutomatedKeywordsOptIn:    boolPtrFromAny(source["automatedKeywordsOptIn"]),
+		AutomatedKeywordsRequired: boolPtrFromAny(source["automatedKeywordsRequired"]),
+		CPAGoal:                   parseMoneyAmount(mapFromAny(source["cpaGoal"])),
+	}
+}
+
+func parseMoneyAmount(source map[string]any) *MoneyAmount {
+	if len(source) == 0 {
+		return nil
+	}
+	amount := floatFromAny(source["amount"])
+	currency := strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringFromAny(source["currency"]), stringFromAny(source["currencyCode"]))))
+	if amount == 0 && currency == "" {
+		return nil
+	}
+	return &MoneyAmount{Amount: amount, Currency: currency}
+}
+
+func parseBudgetOrderSummary(source map[string]any) (BudgetOrderSummary, bool) {
+	orgIDs := intSliceFromAny(source["orgIds"])
+	bo := mapFromAny(source["bo"])
+	if len(bo) == 0 {
+		bo = source
+	}
+	id := intFromAny(bo["id"])
+	if id <= 0 {
+		return BudgetOrderSummary{}, false
+	}
+	name := strings.TrimSpace(stringFromAny(bo["name"]))
+	if name == "" {
+		name = fmt.Sprintf("Budget Order %d", id)
+	}
+	return BudgetOrderSummary{
+		ID:                id,
+		Name:              name,
+		Status:            strings.ToUpper(strings.TrimSpace(stringFromAny(bo["status"]))),
+		StartDate:         toStringPtr(bo["startDate"]),
+		EndDate:           toStringPtr(bo["endDate"]),
+		Budget:            parseMoneyAmount(mapFromAny(bo["budget"])),
+		OrderNumber:       toStringPtr(bo["orderNumber"]),
+		ClientName:        toStringPtr(bo["clientName"]),
+		PrimaryBuyerName:  toStringPtr(bo["primaryBuyerName"]),
+		PrimaryBuyerEmail: toStringPtr(bo["primaryBuyerEmail"]),
+		BillingEmail:      toStringPtr(bo["billingEmail"]),
+		ParentOrgID:       intFromAny(bo["parentOrgId"]),
+		OrgIDs:            orgIDs,
+		SupplySources:     toStringSlice(bo["supplySources"]),
+	}, true
+}
+
+func budgetOrderRequestBody(order BudgetOrderSummary) map[string]any {
+	body := map[string]any{}
+	if strings.TrimSpace(order.Name) != "" {
+		body["name"] = strings.TrimSpace(order.Name)
+	}
+	if order.StartDate != nil && strings.TrimSpace(*order.StartDate) != "" {
+		body["startDate"] = strings.TrimSpace(*order.StartDate)
+	}
+	if order.EndDate != nil && strings.TrimSpace(*order.EndDate) != "" {
+		body["endDate"] = strings.TrimSpace(*order.EndDate)
+	}
+	if order.Budget != nil {
+		body["budget"] = map[string]any{
+			"amount":   fmt.Sprintf("%.4f", order.Budget.Amount),
+			"currency": strings.ToUpper(strings.TrimSpace(order.Budget.Currency)),
+		}
+	}
+	if order.OrderNumber != nil && strings.TrimSpace(*order.OrderNumber) != "" {
+		body["orderNumber"] = strings.TrimSpace(*order.OrderNumber)
+	}
+	if order.ClientName != nil && strings.TrimSpace(*order.ClientName) != "" {
+		body["clientName"] = strings.TrimSpace(*order.ClientName)
+	}
+	if order.PrimaryBuyerName != nil && strings.TrimSpace(*order.PrimaryBuyerName) != "" {
+		body["primaryBuyerName"] = strings.TrimSpace(*order.PrimaryBuyerName)
+	}
+	if order.PrimaryBuyerEmail != nil && strings.TrimSpace(*order.PrimaryBuyerEmail) != "" {
+		body["primaryBuyerEmail"] = strings.TrimSpace(*order.PrimaryBuyerEmail)
+	}
+	if order.BillingEmail != nil && strings.TrimSpace(*order.BillingEmail) != "" {
+		body["billingEmail"] = strings.TrimSpace(*order.BillingEmail)
+	}
+	return body
+}
+
+func orgIDsOrDefault(values []int, fallback string) []int {
+	if len(values) > 0 {
+		return values
+	}
+	id := intFromAny(fallback)
+	if id <= 0 {
+		return []int{}
+	}
+	return []int{id}
+}
+
+func intSliceFromAny(v any) []int {
+	items, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]int, 0, len(items))
+	for _, item := range items {
+		if id := intFromAny(item); id > 0 {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func parseAdSummary(source map[string]any) (AdSummary, bool) {
@@ -1962,5 +2479,18 @@ func boolFromAny(v any) bool {
 		return normalized == "true" || normalized == "1" || normalized == "yes"
 	default:
 		return false
+	}
+}
+
+func boolPtrFromAny(v any) *bool {
+	if v == nil {
+		return nil
+	}
+	switch v.(type) {
+	case bool, int, int64, float64, string:
+		parsed := boolFromAny(v)
+		return &parsed
+	default:
+		return nil
 	}
 }

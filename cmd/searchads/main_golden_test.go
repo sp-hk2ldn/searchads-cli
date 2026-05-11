@@ -119,6 +119,11 @@ func TestGoldenJSONWithoutCredentials(t *testing.T) {
 			args:       []string{"reports", "list", "--json"},
 			goldenFile: "reports_list_missing_creds.json",
 		},
+		{
+			name:       "budget orders list",
+			args:       []string{"budget-orders", "list", "--json"},
+			goldenFile: "budget_orders_list_missing_creds.json",
+		},
 	}
 
 	for _, tc := range testCases {

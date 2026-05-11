@@ -5,6 +5,7 @@ import (
 	"fmt"
 	neturl "net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -114,4 +115,133 @@ func safeDisplayURL(raw string) string {
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String()
+}
+
+func mergeMetricValues(dst map[string]any, src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = map[string]any{}
+	}
+	for key, value := range src {
+		if key == "localSpend" {
+			dst[key] = mergeMoneyMetric(mapFromAnyCLI(dst[key]), mapFromAnyCLI(value))
+			continue
+		}
+		if isAdditiveMetricField(key) {
+			dst[key] = intFromAnyCLI(dst[key]) + intFromAnyCLI(value)
+		}
+	}
+	removeDerivedMetricFields(dst)
+	return dst
+}
+
+func isAdditiveMetricField(key string) bool {
+	switch key {
+	case "impressions",
+		"taps",
+		"tapInstalls",
+		"viewInstalls",
+		"totalInstalls",
+		"tapNewDownloads",
+		"viewNewDownloads",
+		"totalNewDownloads",
+		"tapRedownloads",
+		"viewRedownloads",
+		"totalRedownloads",
+		"tapPreOrdersPlaced",
+		"viewPreOrdersPlaced",
+		"totalPreOrdersPlaced":
+		return true
+	default:
+		return false
+	}
+}
+
+func removeDerivedMetricFields(metrics map[string]any) {
+	for _, key := range []string{
+		"avgCPM",
+		"avgCPT",
+		"tapInstallCPI",
+		"totalAvgCPI",
+		"tapInstallRate",
+		"totalInstallRate",
+		"conversionRate",
+		"ttr",
+	} {
+		delete(metrics, key)
+	}
+}
+
+func mergeMoneyMetric(dst map[string]any, src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = map[string]any{}
+	}
+	dst["amount"] = floatFromAnyCLI(dst["amount"]) + floatFromAnyCLI(src["amount"])
+	if currency := strings.ToUpper(strings.TrimSpace(fmt.Sprint(src["currency"]))); currency != "" {
+		dst["currency"] = currency
+	}
+	return dst
+}
+
+func mapFromAnyCLI(value any) map[string]any {
+	if typed, ok := value.(map[string]any); ok {
+		return typed
+	}
+	return nil
+}
+
+func intFromAnyCLI(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case json.Number:
+		v, _ := typed.Int64()
+		return int(v)
+	default:
+		return 0
+	}
+}
+
+func floatFromAnyCLI(value any) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case float32:
+		return float64(typed)
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	case json.Number:
+		v, _ := typed.Float64()
+		return v
+	default:
+		return 0
+	}
+}
+
+func sortedIntFlagValues(args []string, flag string) []int {
+	set := parseIntFlagSet(args, flag)
+	values := make([]int, 0, len(set))
+	for value := range set {
+		values = append(values, value)
+	}
+	sort.Ints(values)
+	return values
+}
+
+func valueOrZero(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
