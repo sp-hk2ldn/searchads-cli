@@ -95,7 +95,7 @@ func RunKeywords(ctx context.Context, client *appleads.Client, args []string, js
 		if action == "remove" || action == "delete" {
 			for _, keywordID := range targetIDs {
 				if err := client.DeleteKeyword(ctx, campaignID, adGroupID, keywordID); err != nil {
-					respondCommandError("keywords", jsonOut, err)
+					respondDeleteContractError("keywords", jsonOut, err)
 					return
 				}
 			}
