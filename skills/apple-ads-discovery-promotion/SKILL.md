@@ -1,6 +1,6 @@
 ---
 name: apple-ads-discovery-promotion
-description: Discovery -> Promotion -> Isolation operational skill for Apple Ads. Use when converting Search Match/broad search terms into exact-match keywords and maintaining negative-keyword isolation with auditable thresholds.
+description: Discovery, promotion, and isolation operational skill for Apple Ads. Use when converting Search Match/broad search terms into exact-match keywords and maintaining negative-keyword isolation with auditable thresholds.
 ---
 
 # Discovery -> Promotion -> Isolation
@@ -32,10 +32,7 @@ description: Discovery -> Promotion -> Isolation operational skill for Apple Ads
 - Do not remove discovery coverage before replacement exact terms are active.
 - Keep Search Match isolation behavior explicit in output recommendations.
 - Treat pause, negate, delete, and bulk deactivation actions as recommendation-only until the user explicitly approves execution.
-- Respect Apple Ads report API limits in reporting plans:
-  - Impression Share report creation (`POST /api/v5/custom-reports`): max 10 reports per 24 hours.
-  - Impression Share report listing (`GET /api/v5/custom-reports`): max `limit` 50 and 150 requests per 15 minutes.
-- If `429` occurs on report creation, prefer waiting for the rolling 24-hour window over aggressive retries.
+- Before running CLI commands or interpreting Insights, read the [Platform API agent guidance](../../docs/PLATFORM_API_AGENT_GUIDE.md). It covers explicit account selection, SOV metric limits, unsupported operations, and write recovery.
 
 ## References
 - Read `references/discovery-promotion-sop.md` for thresholds and automation spec fields.

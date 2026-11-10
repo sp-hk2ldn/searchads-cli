@@ -1,5 +1,11 @@
 # AGENTS.md instructions for this repo
 
+## CLI operations
+
+Before running commands, generating automation, or interpreting reports, read
+[Platform API agent guidance](docs/PLATFORM_API_AGENT_GUIDE.md). Use the docs and
+binary from the same checkout/version; an installed CLI may predate this migration.
+
 ## Skills
 A skill is a set of local instructions stored in a `SKILL.md` file.
 
