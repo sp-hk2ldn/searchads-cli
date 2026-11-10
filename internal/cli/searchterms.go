@@ -204,6 +204,7 @@ func RunSearchTerms(ctx context.Context, client *appleads.Client, args []string,
 		totalPayload["metrics"] = totals.metrics
 	}
 	payload := map[string]any{
+		"timeZone":     "ORTZ",
 		"ok":           true,
 		"campaignId":   campaignID,
 		"adGroupCount": len(adGroupIDs),

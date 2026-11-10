@@ -114,138 +114,63 @@ type AppAssetSummary struct {
 }
 
 func (c *Client) FetchProductPages(ctx context.Context, adamID int) ([]ProductPageSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	p, e := c.query(ctx, "/product-pages/query", []any{filter("adamId", adamID)})
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/apps/%d/product-pages", appleAdsAPIBase, adamID), auth)
-	if err != nil {
-		return nil, err
-	}
-	items := extractDataItems(payload)
-	results := make([]ProductPageSummary, 0, len(items))
-	for _, itemAny := range items {
-		if summary, ok := parseProductPageSummary(mapFromAny(itemAny)); ok {
-			results = append(results, summary)
+	out := make([]ProductPageSummary, 0)
+	for _, v := range extractDataItems(p) {
+		if item, ok := parseProductPageSummary(mapFromAny(v)); ok {
+			out = append(out, item)
 		}
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
-	return results, nil
+	return out, nil
 }
 
 func (c *Client) FetchProductPage(ctx context.Context, adamID int, productPageID string) (*ProductPageSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	a, e := c.auth(ctx)
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.getJSON(
-		ctx,
-		fmt.Sprintf("%s/apps/%d/product-pages/%s", appleAdsAPIBase, adamID, url.PathEscape(strings.TrimSpace(productPageID))),
-		auth,
-	)
-	if err != nil {
-		return nil, err
+	p, e := c.getJSON(ctx, appleAdsAPIBase+"/product-pages/"+url.PathEscape(productPageID), a)
+	if e != nil {
+		return nil, e
 	}
-	item := extractDataObject(payload)
-	summary, ok := parseProductPageSummary(item)
+	m := extractDataObject(p)
+	if intFromAny(m["adamId"]) != adamID {
+		return nil, fmt.Errorf("product page does not belong to app %d", adamID)
+	}
+	v, ok := parseProductPageSummary(m)
 	if !ok {
-		return nil, fmt.Errorf("invalid product-page response payload")
+		return nil, fmt.Errorf("invalid product page")
 	}
-	return &summary, nil
+	return &v, nil
 }
 
 func (c *Client) FetchProductPageLocales(ctx context.Context, adamID int, productPageID string, expand bool) ([]ProductPageLocaleDetail, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	// Platform locale details always include expanded metadata.
+	if _, e := c.FetchProductPage(ctx, adamID, productPageID); e != nil {
+		return nil, e
 	}
-	endpoint := fmt.Sprintf(
-		"%s/apps/%d/product-pages/%s/locale-details",
-		appleAdsAPIBase,
-		adamID,
-		url.PathEscape(strings.TrimSpace(productPageID)),
-	)
-	if expand {
-		endpoint += "?expand=true"
+	p, e := c.query(ctx, "/product-pages/locale-details/query", []any{filter("productPageId", productPageID)})
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.getJSON(ctx, endpoint, auth)
-	if err != nil {
-		return nil, err
-	}
-	items := extractDataItems(payload)
-	results := make([]ProductPageLocaleDetail, 0, len(items))
-	for _, itemAny := range items {
-		if detail, ok := parseProductPageLocaleDetail(mapFromAny(itemAny)); ok {
-			results = append(results, detail)
+	out := make([]ProductPageLocaleDetail, 0)
+	for _, v := range extractDataItems(p) {
+		if item, ok := parseProductPageLocaleDetail(mapFromAny(v)); ok {
+			out = append(out, item)
 		}
 	}
-	sort.Slice(results, func(i, j int) bool {
-		return firstNonEmptyString(results[i].LanguageCode, results[i].Language) < firstNonEmptyString(results[j].LanguageCode, results[j].Language)
-	})
-	return results, nil
+	return out, nil
 }
 
 func (c *Client) FetchSupportedCountriesOrRegions(ctx context.Context) ([]CountryOrRegionSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/countries-or-regions", appleAdsAPIBase), auth)
-	if err != nil {
-		return nil, err
-	}
-	items := extractDataItems(payload)
-	results := make([]CountryOrRegionSummary, 0, len(items))
-	for _, itemAny := range items {
-		item := mapFromAny(itemAny)
-		code := strings.ToUpper(strings.TrimSpace(stringFromAny(item["code"])))
-		if code == "" {
-			continue
-		}
-		results = append(results, CountryOrRegionSummary{
-			Code:        code,
-			DisplayName: strings.TrimSpace(firstNonEmptyString(stringFromAny(item["displayName"]), stringFromAny(item["name"]))),
-		})
-	}
-	sort.Slice(results, func(i, j int) bool { return results[i].Code < results[j].Code })
-	return results, nil
+	return nil, unsupported("product-pages countries")
 }
 
 func (c *Client) FetchCreativeAppMappingDevices(ctx context.Context) ([]DeviceSizeMapping, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	payload, err := c.getAnyJSON(ctx, fmt.Sprintf("%s/creativeappmappings/devices", appleAdsAPIBase), auth)
-	if err != nil {
-		return nil, err
-	}
-	items := toAnySlice(payload)
-	results := make([]DeviceSizeMapping, 0, len(items))
-	for _, itemAny := range items {
-		item := mapFromAny(itemAny)
-		if len(item) == 0 {
-			continue
-		}
-		deviceClass := strings.TrimSpace(firstNonEmptyString(
-			stringFromAny(item["deviceClass"]),
-			stringFromAny(item["appPreviewDevice"]),
-			stringFromAny(item["id"]),
-		))
-		displayName := strings.TrimSpace(firstNonEmptyString(
-			stringFromAny(item["displayName"]),
-			stringFromAny(item["name"]),
-			deviceClass,
-		))
-		if deviceClass == "" && displayName == "" {
-			continue
-		}
-		results = append(results, DeviceSizeMapping{DeviceClass: deviceClass, DisplayName: displayName})
-	}
-	sort.Slice(results, func(i, j int) bool {
-		return firstNonEmptyString(results[i].DeviceClass, results[i].DisplayName) < firstNonEmptyString(results[j].DeviceClass, results[j].DisplayName)
-	})
-	return results, nil
+	return nil, unsupported("product-pages devices")
 }
 
 func (c *Client) SearchApps(ctx context.Context, query string, returnOwnedApps bool, limit, offset int) ([]AppSummary, error) {
@@ -304,39 +229,48 @@ func (c *Client) FetchApp(ctx context.Context, adamID int) (*AppDetail, error) {
 }
 
 func (c *Client) FetchLocalizedAppDetails(ctx context.Context, adamID int) (*AppDetail, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	p, e := c.query(ctx, fmt.Sprintf("/apps/%d/locale-details/query", adamID), nil)
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/apps/%d/locale-details", appleAdsAPIBase, adamID), auth)
-	if err != nil {
-		return nil, err
-	}
-	detail, ok := parseLocalizedAppDetailList(adamID, extractDataItems(payload))
-	if !ok {
-		return nil, fmt.Errorf("invalid localized app response payload")
-	}
-	return &detail, nil
+	v, _ := parseLocalizedAppDetailList(adamID, extractDataItems(p))
+	return &v, nil
 }
 
 func (c *Client) FindAppEligibility(ctx context.Context, adamID int, selector map[string]any) ([]AppEligibilityRecord, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	p, e := c.query(ctx, "/eligibilities/apps/query", []any{filter("adamId", adamID)})
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/apps/%d/eligibilities/find", appleAdsAPIBase, adamID), auth, selector)
-	if err != nil {
-		return nil, err
+	out := make([]AppEligibilityRecord, 0)
+	app, e := c.FetchApp(ctx, adamID)
+	if e != nil {
+		return nil, e
 	}
-	items := extractDataItems(payload)
-	results := make([]AppEligibilityRecord, 0, len(items))
-	for _, itemAny := range items {
-		if row, ok := parseAppEligibilityRecord(mapFromAny(itemAny)); ok {
-			results = append(results, row)
+	for _, v := range extractDataItems(p) {
+		m := mapFromAny(v)
+		m["appName"] = app.AppName
+		m["supplySource"] = firstNonEmptyAny(m["supplyPlacement"], m["supplySource"])
+		if !matchesFilters(m, selectorFilters(selector)) {
+			continue
+		}
+		if item, ok := parseAppEligibilityRecord(mapFromAny(v)); ok {
+			out = append(out, item)
 		}
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].AdamID < results[j].AdamID })
-	return results, nil
+	page := mapFromAny(selector["pagination"])
+	offset := intFromAny(page["offset"])
+	limit := intFromAny(page["limit"])
+	if offset >= len(out) {
+		return []AppEligibilityRecord{}, nil
+	}
+	if offset > 0 {
+		out = out[offset:]
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (c *Client) SearchGeo(ctx context.Context, query, countryCode, entity string, limit int) ([]GeoSearchEntity, error) {
@@ -344,15 +278,15 @@ func (c *Client) SearchGeo(ctx context.Context, query, countryCode, entity strin
 	if err != nil {
 		return nil, err
 	}
-	endpoint := fmt.Sprintf("%s/search/geo?query=%s", appleAdsAPIBase, url.QueryEscape(strings.TrimSpace(query)))
+	endpoint := fmt.Sprintf("%s/search/geo?supplySource=APPSTORE&query=%s", appleAdsAPIBase, url.QueryEscape(strings.TrimSpace(query)))
 	if cc := strings.ToUpper(strings.TrimSpace(countryCode)); cc != "" {
 		endpoint += "&countrycode=" + url.QueryEscape(cc)
 	}
 	if e := strings.TrimSpace(entity); e != "" {
-		endpoint += "&entity=" + url.QueryEscape(e)
+		endpoint += "&entity=" + url.QueryEscape(platformGeoEntity(e))
 	}
 	if limit > 0 {
-		endpoint += fmt.Sprintf("&limit=%d", limit)
+		endpoint += fmt.Sprintf("&pageSize=%d", limit)
 	}
 	payload, err := c.getJSON(ctx, endpoint, auth)
 	if err != nil {
@@ -369,81 +303,71 @@ func (c *Client) SearchGeo(ctx context.Context, query, countryCode, entity strin
 	return results, nil
 }
 
-func (c *Client) FetchGeoData(ctx context.Context, geoID string) (map[string]any, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+func (c *Client) FetchGeoData(ctx context.Context, geoID string, entities ...string) (map[string]any, error) {
+	if len(entities) == 0 || entities[0] == "" {
+		return nil, fmt.Errorf("geo get now requires --entity Country|AdminArea|Locality")
 	}
-	endpoint := fmt.Sprintf("%s/geodata?geoId=%s", appleAdsAPIBase, url.QueryEscape(strings.TrimSpace(geoID)))
-	payload, err := c.getAnyJSON(ctx, endpoint, auth)
-	if err != nil {
-		return nil, err
+	a, e := c.auth(ctx)
+	if e != nil {
+		return nil, e
 	}
-	if obj := mapFromAny(payload); len(obj) > 0 {
-		return obj, nil
-	}
-	return map[string]any{"data": payload}, nil
+	return c.postJSON(ctx, appleAdsAPIBase+"/search/geo", a, map[string]any{"geoRequest": []any{map[string]any{"id": geoID, "entity": platformGeoEntity(entities[0])}}, "supplySource": "APPSTORE"})
 }
 
 func (c *Client) FindAdRejections(ctx context.Context, selector map[string]any) ([]AdRejectionSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/product-page-reasons/find", appleAdsAPIBase), auth, selector)
-	if err != nil {
-		return nil, err
-	}
-	items := extractDataItems(payload)
-	results := make([]AdRejectionSummary, 0, len(items))
-	for _, itemAny := range items {
-		if row, ok := parseAdRejectionSummary(mapFromAny(itemAny)); ok {
-			results = append(results, row)
+	// Apple documents only adamId as a query filter. Apply other existing filters locally.
+	filters := selectorFilters(selector)
+	server := []any{}
+	for _, v := range filters {
+		m := mapFromAny(v)
+		if m["field"] == "adamId" && m["operator"] == "EQUALS" {
+			server = append(server, v)
 		}
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
-	return results, nil
+	p, e := c.query(ctx, "/rejection-reasons/apps/query", server)
+	if e != nil {
+		return nil, e
+	}
+	out := make([]AdRejectionSummary, 0)
+	for _, v := range extractDataItems(p) {
+		m := mapFromAny(v)
+		m["supplySource"] = firstNonEmptyAny(m["supplyPlacement"], m["supplySource"])
+		if matchesFilters(m, filters) {
+			if item, ok := parseAdRejectionSummary(m); ok {
+				out = append(out, item)
+			}
+		}
+	}
+	page := mapFromAny(selector["pagination"])
+	offset := intFromAny(page["offset"])
+	limit := intFromAny(page["limit"])
+	if offset >= len(out) {
+		return []AdRejectionSummary{}, nil
+	}
+	if offset > 0 {
+		out = out[offset:]
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (c *Client) FetchAdRejection(ctx context.Context, reasonID int) (*AdRejectionSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	rows, e := c.FindAdRejections(ctx, nil)
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/product-page-reasons/%d", appleAdsAPIBase, reasonID), auth)
-	if err != nil {
-		return nil, err
+	for _, r := range rows {
+		if r.ID == reasonID {
+			return &r, nil
+		}
 	}
-	item := extractDataObject(payload)
-	row, ok := parseAdRejectionSummary(item)
-	if !ok {
-		return nil, fmt.Errorf("invalid ad-rejection response payload")
-	}
-	return &row, nil
+	return nil, fmt.Errorf("rejection reason %d not found in selected account", reasonID)
 }
 
 func (c *Client) FindAppAssets(ctx context.Context, adamID int, selector map[string]any) ([]AppAssetSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/apps/%d/assets/find", appleAdsAPIBase, adamID), auth, selector)
-	if err != nil {
-		return nil, err
-	}
-	items := extractDataItems(payload)
-	results := make([]AppAssetSummary, 0, len(items))
-	for _, itemAny := range items {
-		if row, ok := parseAppAssetSummary(mapFromAny(itemAny)); ok {
-			results = append(results, row)
-		}
-	}
-	sort.Slice(results, func(i, j int) bool {
-		left := firstNonEmptyString(stringPtrValue(results[i].AssetGenID), stringPtrValue(results[i].AssetURL), fmt.Sprintf("%d", i))
-		right := firstNonEmptyString(stringPtrValue(results[j].AssetGenID), stringPtrValue(results[j].AssetURL), fmt.Sprintf("%d", j))
-		return left < right
-	})
-	return results, nil
+	return nil, unsupported("ad-rejections assets (App Store assets are not Maps assets)")
 }
 
 func (c *Client) getAnyJSON(ctx context.Context, endpoint string, auth *authContext) (any, error) {
@@ -453,7 +377,7 @@ func (c *Client) getAnyJSON(ctx context.Context, endpoint string, auth *authCont
 	}
 	if auth != nil {
 		req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-		req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
+		req.Header.Set("X-AP-Context", "adAccountId="+auth.adAccountID)
 	}
 	respBody, statusCode, err := c.do(req)
 	if err != nil {
@@ -512,7 +436,7 @@ func parseProductPageLocaleDetail(source map[string]any) (ProductPageLocaleDetai
 }
 
 func parseAppDetail(source map[string]any) (AppDetail, bool) {
-	adamID := intFromAny(source["adamId"])
+	adamID := intFromAny(firstNonEmptyAny(source["adamId"], source["id"]))
 	if adamID <= 0 {
 		return AppDetail{}, false
 	}
@@ -529,10 +453,10 @@ func parseAppDetail(source map[string]any) (AppDetail, bool) {
 	return AppDetail{
 		AdamID:          adamID,
 		AppName:         strings.TrimSpace(firstNonEmptyString(stringFromAny(source["appName"]), stringFromAny(source["name"]))),
-		DeveloperName:   strings.TrimSpace(stringFromAny(source["developerName"])),
+		DeveloperName:   strings.TrimSpace(firstNonEmptyString(stringFromAny(source["developerName"]), stringFromAny(source["artistName"]))),
 		CountryOrRegion: strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringFromAny(source["countryOrRegion"]), stringFromAny(source["countryCode"])))),
 		PrimaryGenreID:  intFromAny(source["primaryGenreId"]),
-		IconURL:         toStringPtr(source["iconUrl"]),
+		IconURL:         toStringPtr(firstNonEmptyAny(source["iconUrl"], source["iconPictureUrl"])),
 		Details:         details,
 	}, true
 }
@@ -576,7 +500,7 @@ func parseAppLocaleDetail(item map[string]any, language string) AppLocaleDetail 
 }
 
 func parseAppEligibilityRecord(source map[string]any) (AppEligibilityRecord, bool) {
-	adamID := intFromAny(source["adamId"])
+	adamID := intFromAny(firstNonEmptyAny(source["adamId"], source["id"]))
 	if adamID <= 0 {
 		return AppEligibilityRecord{}, false
 	}
@@ -651,6 +575,12 @@ func parseAppAssetSummary(source map[string]any) (AppAssetSummary, bool) {
 
 func toAnySlice(payload any) []any {
 	switch typed := payload.(type) {
+	case []string:
+		out := make([]any, len(typed))
+		for i, v := range typed {
+			out[i] = v
+		}
+		return out
 	case []any:
 		return typed
 	case map[string]any:

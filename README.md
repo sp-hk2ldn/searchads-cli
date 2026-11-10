@@ -1,10 +1,12 @@
 # searchads-cli
 
-Lightweight Apple Search Ads CLI in Go.
+Lightweight Apple Ads Platform API CLI in Go.
+
+Migrated from Campaign Management API v5. See [migration and compatibility notes](docs/PLATFORM_API_MIGRATION.md).
 
 It exists because clicking around the Apple Search Ads dashboard gets old quickly once you start treating acquisition as something you want to inspect, script, and hand to agents with a bit of human approval around the dangerous bits.
 
-Use it to work with campaigns, ad groups, ads, creatives, product pages, apps, geo, keywords, search terms, negative keywords, custom reports, budget orders, and SOV reports from the terminal.
+Use it to work with campaigns, ad groups, ads, creatives, product pages, apps, geo, keywords, search terms, negative keywords, budget orders, and Insights SOV reports from the terminal.
 
 ## Install
 
@@ -24,8 +26,11 @@ go run ./cmd/searchads --help
 ## Quick examples
 
 ```bash
-# Check auth/org discovery
-searchads status
+# Check auth and discover/select an account
+searchads status --adAccountId 123
+
+# Reuse that explicit account in subsequent examples
+export SEARCHADS_AD_ACCOUNT_ID=123
 
 # Find paused campaigns as JSON
 searchads campaigns find --status PAUSED --json
@@ -61,11 +66,8 @@ searchads negatives add \
   --matchType EXACT \
   --json
 
-# Download a completed custom report
-searchads reports download \
-  --reportId 987654 \
-  --out reports/custom/987654.csv \
-  --json
+# Query impression share and export locally
+searchads sov-report --adamId 123456 --reportType ALL_SLOTS --out reports/sov --json
 ```
 
 IDs above are examples. Don't paste real campaign/account output into public issues or screenshots without redacting it first.
@@ -115,9 +117,11 @@ The CLI supports either:
 
 - `SEARCHADS_CREDENTIALS_JSON` with JSON fields:
   - required: `clientId`, `teamId`, `keyId`, `privateKey`
-  - optional: `orgId`, `popularityAdamId`, `popularityAdGroupId`, `popularityWebCookie`, `popularityXsrfToken`
+  - optional: `adAccountId`, `orgId`, `popularityAdamId`, `popularityAdGroupId`, `popularityWebCookie`, `popularityXsrfToken`
 - split env vars:
   - `SEARCHADS_CLIENT_ID`, `SEARCHADS_TEAM_ID`, `SEARCHADS_KEY_ID`, `SEARCHADS_PRIVATE_KEY`
+
+Account choice: `--adAccountId` overrides `SEARCHADS_AD_ACCOUNT_ID`, which overrides JSON `adAccountId`. Multiple accessible accounts require explicit selection. Legacy `orgId` is not an account selector. The existing managed credential injection route remains supported.
 
 For local development, start from [.env.example](.env.example), copy it to `.env`, then load it into your shell before running the CLI:
 
@@ -154,8 +158,8 @@ go test ./...
 
 ## Notes
 
-- Auth flow: ES256 client-secret JWT, Apple token exchange, org discovery via `/api/v5/me`.
-- Includes custom-report workflows for SOV and generic report download.
+- Auth flow: ES256 client-secret JWT, Apple token exchange, organization identity via `/v1/me`, account discovery via `/v1/acls`.
+- SOV uses synchronous Insights queries. Saved custom-report commands return an unsupported error.
 - Open source release checklist: [docs/OPEN_SOURCE_RELEASE_CHECKLIST.md](docs/OPEN_SOURCE_RELEASE_CHECKLIST.md)
 - Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Security policy: [SECURITY.md](SECURITY.md)
@@ -163,7 +167,7 @@ go test ./...
 
 ## Reporting API limits
 
-- Impression Share (`sov-report`) generation is limited by Apple Ads to **10 reports per rolling 24 hours** per org.
-- Custom report listing uses a maximum page size of **50** (`/custom-reports?limit=50`).
-- The custom reports API is rate-limited (Apple docs indicate **150 requests per 15 minutes** for listing), so callers should use retry/backoff on `429`.
-- Practical guidance: prefer `searchads reports list/get/download` for existing reports and only trigger `searchads sov-report` when needed.
+- Report queries paginate with `offset` and `pageSize`; daily performance windows are limited by Apple to 90 days.
+- SOV uses completed UTC weeks, up to four weeks per query. `--reportType` selects `ALL_SLOTS` (default) or `FIRST_SLOT`.
+- Writes are sent once: no retry, redirect replay, alternate endpoint or v5 fallback. On an uncertain network outcome, inspect current state before retrying manually.
+- See [the migration inventory](docs/PLATFORM_API_MIGRATION.md) for retired operations and JSON compatibility changes.

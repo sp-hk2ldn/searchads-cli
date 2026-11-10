@@ -147,7 +147,7 @@ fi
 
 echo "Apple Ads credentials detected; running read-only live smoke checks."
 run_live_smoke "campaigns/list" campaigns list --json
-run_live_smoke "reports/list" reports list --json
+run_live_smoke "campaigns/find" campaigns find --status ENABLED --json
 run_live_smoke "budget-orders/list" budget-orders list --json
 
 if [[ -n "${SEARCHADS_PARITY_CAMPAIGN_ID:-}" ]]; then

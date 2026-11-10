@@ -518,9 +518,7 @@ func validateCampaignCreateBiddingFlags(args []string, biddingStrategy string, t
 		}
 		return nil
 	case "MAX_CONVERSIONS":
-		if targetCPA == nil {
-			return fmt.Errorf("Missing required --targetCpa <number> for MAX_CONVERSIONS")
-		}
+
 		if rawSupplySources := splitCSVValues(valuesForFlag(args, "--supplySource")); len(rawSupplySources) > 0 {
 			supplySources := normalizeUpperValues(rawSupplySources)
 			if len(supplySources) != 1 || supplySources[0] != "APPSTORE_SEARCH_RESULTS" {

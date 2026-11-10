@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,10 +24,8 @@ import (
 )
 
 const (
-	appleIDTokenURL      = "https://appleid.apple.com/auth/oauth2/token"
-	appleAdsAPIBase      = "https://api.searchads.apple.com/api/v5"
-	campaignsPerPage     = 200
-	customReportsPerPage = 50
+	appleIDTokenURL = "https://appleid.apple.com/auth/oauth2/token"
+	appleAdsAPIBase = "https://api.ads.apple.com/v1"
 )
 
 var (
@@ -37,6 +36,7 @@ var (
 
 type Client struct {
 	httpClient *http.Client
+	accountID  string
 
 	mu     sync.Mutex
 	cached *authContext
@@ -45,6 +45,7 @@ type Client struct {
 type authContext struct {
 	accessToken     string
 	orgID           string
+	adAccountID     string
 	expiresAt       time.Time
 	credentialsHash string
 }
@@ -61,9 +62,10 @@ type CampaignSummary struct {
 	Status              string       `json:"status"`
 	DisplayStatus       string       `json:"displayStatus,omitempty"`
 	ServingStatus       string       `json:"servingStatus,omitempty"`
-	ServingStateReasons []string     `json:"servingStateReasons,omitempty"`
+	ServingStateReasons []string     `json:"servingStateReasons"`
+	BidCeiling          *MoneyAmount `json:"bidCeiling,omitempty"`
 	BiddingStrategy     string       `json:"biddingStrategy,omitempty"`
-	TargetCPA           *MoneyAmount `json:"targetCpa,omitempty"`
+	TargetCPA           *MoneyAmount `json:"targetCpa"`
 	DailyBudgetAmount   *MoneyAmount `json:"dailyBudgetAmount,omitempty"`
 	BudgetAmount        *MoneyAmount `json:"budgetAmount,omitempty"`
 	SupplySources       []string     `json:"supplySources,omitempty"`
@@ -114,7 +116,9 @@ func NewClient(httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 45 * time.Second}
 	}
-	return &Client{httpClient: httpClient}
+	copyClient := *httpClient
+	copyClient.CheckRedirect = func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }
+	return &Client{httpClient: &copyClient}
 }
 
 func (c *Client) ValidateCredentials(ctx context.Context) (string, error) {
@@ -126,275 +130,49 @@ func (c *Client) ValidateCredentials(ctx context.Context) (string, error) {
 }
 
 func (c *Client) FetchCampaigns(ctx context.Context) ([]CampaignSummary, error) {
-	auth, err := c.auth(ctx)
+	p, err := c.query(ctx, "/campaigns/query", nil)
 	if err != nil {
 		return nil, err
 	}
-
-	results := make([]CampaignSummary, 0, campaignsPerPage)
-	seen := map[int]struct{}{}
-	offset := 0
-
-	for {
-		endpoint := fmt.Sprintf("%s/campaigns?offset=%d&limit=%d", appleAdsAPIBase, offset, campaignsPerPage)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-		req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
-
-		respBody, statusCode, err := c.do(req)
-		if err != nil {
-			return nil, err
-		}
-		if statusCode < 200 || statusCode > 299 {
-			return nil, httpStatusError(statusCode, respBody)
-		}
-
-		var payload map[string]any
-		if err := json.Unmarshal(respBody, &payload); err != nil {
-			return nil, fmt.Errorf("invalid campaigns response JSON: %w", err)
-		}
-
-		items, _ := payload["data"].([]any)
-		for _, item := range items {
-			row, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			id := intFromAny(row["id"])
-			if id <= 0 {
-				continue
-			}
-			if _, already := seen[id]; already {
-				continue
-			}
-			results = append(results, parseCampaignSummary(row, id, ""))
-			seen[id] = struct{}{}
-		}
-
-		total := 0
-		if page, ok := payload["pagination"].(map[string]any); ok {
-			total = intFromAny(page["totalResults"])
-		}
-		if (total > 0 && offset+campaignsPerPage >= total) || len(items) < campaignsPerPage {
-			break
-		}
-		offset += campaignsPerPage
+	result := make([]CampaignSummary, 0)
+	for _, v := range extractDataItems(p) {
+		m := mapFromAny(v)
+		result = append(result, parseCampaignSummary(m, intFromAny(m["id"]), ""))
 	}
-
-	return results, nil
+	return result, nil
 }
 
 func (c *Client) FetchAdGroups(ctx context.Context, campaignID int) ([]AdGroupSummary, error) {
-	auth, err := c.auth(ctx)
+	p, err := c.query(ctx, "/adgroups/query", []any{filter("campaignId", campaignID)})
 	if err != nil {
 		return nil, err
 	}
-
-	results := make([]AdGroupSummary, 0, campaignsPerPage)
-	seen := map[int]struct{}{}
-	offset := 0
-
-	for {
-		endpoint := fmt.Sprintf(
-			"%s/campaigns/%d/adgroups?offset=%d&limit=%d",
-			appleAdsAPIBase,
-			campaignID,
-			offset,
-			campaignsPerPage,
-		)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-		req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
-
-		respBody, statusCode, err := c.do(req)
-		if err != nil {
-			return nil, err
-		}
-		if statusCode < 200 || statusCode > 299 {
-			return nil, httpStatusError(statusCode, respBody)
-		}
-
-		var payload map[string]any
-		if err := json.Unmarshal(respBody, &payload); err != nil {
-			return nil, fmt.Errorf("invalid ad groups response JSON: %w", err)
-		}
-
-		items, _ := payload["data"].([]any)
-		for _, item := range items {
-			row, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			id := intFromAny(row["id"])
-			if id <= 0 {
-				id = intFromAny(row["adGroupId"])
-			}
-			if id <= 0 {
-				continue
-			}
-			if _, already := seen[id]; already {
-				continue
-			}
-
-			name := strings.TrimSpace(stringFromAny(row["name"]))
-			if name == "" {
-				name = strings.TrimSpace(stringFromAny(row["adGroupName"]))
-			}
-			if name == "" {
-				name = fmt.Sprintf("Ad Group %d", id)
-			}
-
-			results = append(results, parseAdGroupSummary(row, id, name))
-			seen[id] = struct{}{}
-		}
-
-		total := 0
-		if page, ok := payload["pagination"].(map[string]any); ok {
-			total = intFromAny(page["totalResults"])
-		}
-		if (total > 0 && offset+campaignsPerPage >= total) || len(items) < campaignsPerPage {
-			break
-		}
-		offset += campaignsPerPage
+	result := make([]AdGroupSummary, 0)
+	for _, v := range extractDataItems(p) {
+		m := mapFromAny(v)
+		result = append(result, parseAdGroupSummary(m, intFromAny(m["id"]), stringFromAny(m["name"])))
 	}
-
-	return results, nil
+	return result, nil
 }
 
 func (c *Client) FetchKeywords(ctx context.Context, campaignID, adGroupID int) ([]KeywordSummary, error) {
-	auth, err := c.auth(ctx)
+	if err := c.checkAdGroup(ctx, campaignID, adGroupID); err != nil {
+		return nil, err
+	}
+	p, err := c.query(ctx, "/keywords/query", []any{filter("adGroupId", adGroupID)})
 	if err != nil {
 		return nil, err
 	}
-
-	paths := []string{
-		fmt.Sprintf("%s/campaigns/%d/adgroups/%d/targetingkeywords", appleAdsAPIBase, campaignID, adGroupID),
-		fmt.Sprintf("%s/adgroups/%d/targetingkeywords", appleAdsAPIBase, adGroupID),
-	}
-	var lastErr error
-	for idx, path := range paths {
-		rows, err := c.fetchKeywordsFromEndpoint(ctx, auth, path)
-		if err == nil {
-			return rows, nil
-		}
-		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == http.StatusNotFound && idx == 0 {
-			lastErr = err
+	result := make([]KeywordSummary, 0)
+	for _, v := range extractDataItems(p) {
+		m := mapFromAny(v)
+		if boolFromAny(m["deleted"]) || stringFromAny(m["status"]) == "DELETED" {
 			continue
 		}
-		return nil, err
+		bid, currency := parseBid(mapFromAny(m["bidAmount"]))
+		result = append(result, KeywordSummary{ID: intFromAny(m["id"]), Text: stringFromAny(m["text"]), Status: stringFromAny(m["status"]), MatchType: stringFromAny(m["matchType"]), BidAmount: bid, Currency: currency})
 	}
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, errors.New("keywords endpoint unavailable")
-}
-
-func (c *Client) fetchKeywordsFromEndpoint(ctx context.Context, auth *authContext, endpoint string) ([]KeywordSummary, error) {
-	results := make([]KeywordSummary, 0, campaignsPerPage)
-	seen := map[int]struct{}{}
-	offset := 0
-
-	for {
-		req, err := http.NewRequestWithContext(
-			ctx,
-			http.MethodGet,
-			fmt.Sprintf("%s?offset=%d&limit=%d", endpoint, offset, campaignsPerPage),
-			nil,
-		)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-		req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
-
-		respBody, statusCode, err := c.do(req)
-		if err != nil {
-			return nil, err
-		}
-		if statusCode < 200 || statusCode > 299 {
-			return nil, httpStatusError(statusCode, respBody)
-		}
-
-		var payload map[string]any
-		if err := json.Unmarshal(respBody, &payload); err != nil {
-			return nil, fmt.Errorf("invalid keywords response JSON: %w", err)
-		}
-
-		items, _ := payload["data"].([]any)
-		for _, item := range items {
-			row, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			id := intFromAny(row["id"])
-			if id <= 0 {
-				id = intFromAny(row["keywordId"])
-			}
-			if id <= 0 {
-				continue
-			}
-			if _, already := seen[id]; already {
-				continue
-			}
-
-			text := strings.TrimSpace(stringFromAny(row["keywordText"]))
-			if text == "" {
-				text = strings.TrimSpace(stringFromAny(row["text"]))
-			}
-			if text == "" {
-				text = strings.TrimSpace(stringFromAny(row["name"]))
-			}
-			if text == "" {
-				text = strings.TrimSpace(stringFromAny(row["keyword"]))
-			}
-			if text == "" {
-				text = fmt.Sprintf("Keyword %d", id)
-			}
-
-			matchType := strings.ToUpper(strings.TrimSpace(stringFromAny(row["matchType"])))
-			if matchType == "" {
-				matchType = "BROAD"
-			}
-			status := strings.ToUpper(strings.TrimSpace(stringFromAny(row["status"])))
-			if status == "" {
-				status = "ENABLED"
-			}
-			deleted := boolFromAny(row["deleted"]) || boolFromAny(row["softDeleted"])
-			if deleted || status == "DELETED" || status == "REMOVED" {
-				seen[id] = struct{}{}
-				continue
-			}
-			bidAmount, currency := parseBid(mapFromAny(row["bidAmount"]), mapFromAny(row["bid"]))
-
-			results = append(results, KeywordSummary{
-				ID:        id,
-				Text:      text,
-				MatchType: matchType,
-				Status:    status,
-				Deleted:   deleted,
-				BidAmount: bidAmount,
-				Currency:  currency,
-			})
-			seen[id] = struct{}{}
-		}
-
-		total := 0
-		if page, ok := payload["pagination"].(map[string]any); ok {
-			total = intFromAny(page["totalResults"])
-		}
-		if (total > 0 && offset+campaignsPerPage >= total) || len(items) < campaignsPerPage {
-			break
-		}
-		offset += campaignsPerPage
-	}
-
-	return results, nil
+	return result, nil
 }
 
 func (c *Client) auth(ctx context.Context) (*authContext, error) {
@@ -406,7 +184,7 @@ func (c *Client) auth(ctx context.Context) (*authContext, error) {
 		return nil, errors.New("Apple Ads credentials are missing or incomplete")
 	}
 
-	credentialsHash := hashCredentials(*creds)
+	credentialsHash := hashCredentials(*creds) + "|" + c.accountID + "|" + os.Getenv("SEARCHADS_AD_ACCOUNT_ID") + "|" + creds.AdAccountID
 	c.mu.Lock()
 	cached := c.cached
 	c.mu.Unlock()
@@ -428,7 +206,7 @@ func (c *Client) auth(ctx context.Context) (*authContext, error) {
 		return nil, errors.New("OAuth response missing access_token")
 	}
 
-	orgID, err := c.fetchOrgID(ctx, tokenResp.AccessToken)
+	orgID, accountID, err := c.resolveAccount(ctx, tokenResp.AccessToken, *creds)
 	if err != nil {
 		return nil, err
 	}
@@ -440,6 +218,7 @@ func (c *Client) auth(ctx context.Context) (*authContext, error) {
 	auth := &authContext{
 		accessToken:     tokenResp.AccessToken,
 		orgID:           orgID,
+		adAccountID:     accountID,
 		expiresAt:       expiresAt,
 		credentialsHash: credentialsHash,
 	}
@@ -480,36 +259,6 @@ func (c *Client) requestAccessToken(ctx context.Context, clientSecret, clientID 
 		payload.ExpiresIn = 3600
 	}
 	return &payload, nil
-}
-
-func (c *Client) fetchOrgID(ctx context.Context, accessToken string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, appleAdsAPIBase+"/me", nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	respBody, statusCode, err := c.do(req)
-	if err != nil {
-		return "", err
-	}
-	if statusCode < 200 || statusCode > 299 {
-		return "", httpStatusError(statusCode, respBody)
-	}
-
-	var payload map[string]any
-	if err := json.Unmarshal(respBody, &payload); err != nil {
-		return "", fmt.Errorf("invalid /me response JSON: %w", err)
-	}
-	data, ok := payload["data"].(map[string]any)
-	if !ok {
-		return "", errors.New("Apple Ads /me response missing data")
-	}
-	org := stringFromAny(data["parentOrgId"])
-	if strings.TrimSpace(org) == "" {
-		return "", errors.New("Apple Ads /me response missing parentOrgId")
-	}
-	return org, nil
 }
 
 func (c *Client) do(req *http.Request) ([]byte, int, error) {

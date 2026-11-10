@@ -130,6 +130,8 @@ type CustomReport struct {
 }
 
 type BudgetOrderSummary struct {
+	AdAccountIDs      []int        `json:"adAccountIds,omitempty"`
+	SystemStatus      string       `json:"systemStatus,omitempty"`
 	ID                int          `json:"id"`
 	Name              string       `json:"name"`
 	Status            string       `json:"status,omitempty"`
@@ -240,6 +242,10 @@ func (c *Client) CreateCampaign(
 		body["endTime"] = trimmedEnd
 	}
 
+	body, err = platformCampaign(body, auth.adAccountID, true)
+	if err != nil {
+		return nil, err
+	}
 	payload, err := c.postJSON(ctx, appleAdsAPIBase+"/campaigns", auth, body)
 	if err != nil {
 		return nil, err
@@ -276,29 +282,7 @@ func (c *Client) UpdateCampaignStatus(ctx context.Context, campaignID int, statu
 }
 
 func (c *Client) DeleteCampaign(ctx context.Context, campaignID int) error {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodDelete,
-		fmt.Sprintf("%s/campaigns/%d", appleAdsAPIBase, campaignID),
-		nil,
-	)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-	req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
-	respBody, statusCode, err := c.do(req)
-	if err != nil {
-		return err
-	}
-	if statusCode < 200 || statusCode > 299 {
-		return httpStatusError(statusCode, respBody)
-	}
-	return nil
+	return c.deleteEntity(ctx, "campaigns", campaignID)
 }
 
 func (c *Client) UpdateCampaignDailyBudget(ctx context.Context, campaignID int, budgetAmount float64, budgetCurrency string) (*CampaignSummary, error) {
@@ -343,19 +327,8 @@ func (c *Client) UpdateCampaignBiddingStrategy(ctx context.Context, campaignID i
 		return nil, fmt.Errorf("unsupported bidding strategy %q", biddingStrategy)
 	}
 	campaign := map[string]any{"biddingStrategy": normalized}
-	if normalized == "MAX_CONVERSIONS" {
-		if targetCPA == nil || *targetCPA <= 0 {
-			return nil, fmt.Errorf("target CPA is required for MAX_CONVERSIONS")
-		}
-		campaign["targetCpa"] = map[string]any{
-			"amount":   fmt.Sprintf("%.4f", *targetCPA),
-			"currency": firstNonEmptyString(strings.ToUpper(strings.TrimSpace(currency)), "USD"),
-		}
-	} else if normalized == "MANUAL_CPT" {
-		if targetCPA != nil {
-			return nil, fmt.Errorf("target CPA is only supported for MAX_CONVERSIONS")
-		}
-		campaign["targetCpa"] = nil
+	if targetCPA != nil {
+		return nil, unsupported("--targetCpa; Platform bid upper bounds have different semantics")
 	}
 	payload, err := c.putJSON(
 		ctx,
@@ -389,9 +362,7 @@ func validateCampaignBiddingStrategy(strategy string, targetCPA *float64, supply
 		}
 		return nil
 	case "MAX_CONVERSIONS":
-		if targetCPA == nil || *targetCPA <= 0 {
-			return fmt.Errorf("target CPA is required for MAX_CONVERSIONS")
-		}
+
 		if strings.ToUpper(strings.TrimSpace(adChannelType)) != "SEARCH" {
 			return fmt.Errorf("MAX_CONVERSIONS requires adChannelType SEARCH")
 		}
@@ -419,18 +390,18 @@ func (c *Client) CreateAdGroup(
 		return nil, err
 	}
 	body := map[string]any{
-		"orgId":        auth.orgID,
+
 		"campaignId":   campaignID,
 		"name":         name,
 		"status":       status,
-		"pricingModel": "CPC",
+		"pricingModel": "CPT",
 		"startTime":    time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if defaultBid != nil && *defaultBid > 0 {
-		body["defaultBidAmount"] = map[string]any{
+		body["bidStrategy"] = map[string]any{"bidStrategyType": "MANUAL_CPT", "bidStrategyGoal": "TAP", "bid": map[string]any{
 			"amount":   fmt.Sprintf("%.4f", *defaultBid),
 			"currency": currency,
-		}
+		}}
 	}
 	if automatedKeywordsOptIn != nil {
 		body["automatedKeywordsOptIn"] = *automatedKeywordsOptIn
@@ -438,7 +409,7 @@ func (c *Client) CreateAdGroup(
 	if automatedKeywordsRequired != nil {
 		body["automatedKeywordsRequired"] = *automatedKeywordsRequired
 	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/campaigns/%d/adgroups", appleAdsAPIBase, campaignID), auth, body)
+	payload, err := c.postJSON(ctx, appleAdsAPIBase+"/adgroups", auth, body)
 	if err != nil {
 		return nil, err
 	}
@@ -459,6 +430,10 @@ func (c *Client) CreateAdGroup(
 }
 
 func (c *Client) UpdateAdGroupStatus(ctx context.Context, campaignID, adGroupID int, status string) (*AdGroupSummary, error) {
+	if err := c.checkAdGroup(ctx, campaignID, adGroupID); err != nil {
+		return nil, err
+	}
+
 	auth, err := c.auth(ctx)
 	if err != nil {
 		return nil, err
@@ -466,7 +441,7 @@ func (c *Client) UpdateAdGroupStatus(ctx context.Context, campaignID, adGroupID 
 	normalized := strings.ToUpper(strings.TrimSpace(status))
 	payload, err := c.putJSON(
 		ctx,
-		fmt.Sprintf("%s/campaigns/%d/adgroups/%d", appleAdsAPIBase, campaignID, adGroupID),
+		fmt.Sprintf("%s/adgroups/%d", appleAdsAPIBase, adGroupID),
 		auth,
 		map[string]any{"status": normalized},
 	)
@@ -485,72 +460,46 @@ func (c *Client) UpdateAdGroupStatus(ctx context.Context, campaignID, adGroupID 
 }
 
 func (c *Client) DeleteAdGroup(ctx context.Context, campaignID, adGroupID int) error {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return err
+	if e := c.checkAdGroup(ctx, campaignID, adGroupID); e != nil {
+		return e
 	}
-	paths := []string{
-		fmt.Sprintf("%s/campaigns/%d/adgroups/%d", appleAdsAPIBase, campaignID, adGroupID),
-		fmt.Sprintf("%s/adgroups/%d", appleAdsAPIBase, adGroupID),
-	}
-	var lastErr error
-	for i, path := range paths {
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodDelete, path, nil)
-		if reqErr != nil {
-			return reqErr
-		}
-		req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-		req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
-		respBody, statusCode, doErr := c.do(req)
-		if doErr != nil {
-			return doErr
-		}
-		if statusCode >= 200 && statusCode <= 299 {
-			return nil
-		}
-		lastErr = httpStatusError(statusCode, respBody)
-		if apiErr, ok := lastErr.(*APIError); ok && apiErr.StatusCode == http.StatusNotFound && i == 0 {
-			continue
-		}
-		return lastErr
-	}
-	if lastErr != nil {
-		return lastErr
-	}
-	return errors.New("ad group delete failed")
+	return c.deleteEntity(ctx, "adgroups", adGroupID)
 }
 
 func (c *Client) FetchAds(ctx context.Context, campaignID, adGroupID int) ([]AdSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
+	if err := c.checkAdGroup(ctx, campaignID, adGroupID); err != nil {
 		return nil, err
 	}
-	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/campaigns/%d/adgroups/%d/ads", appleAdsAPIBase, campaignID, adGroupID), auth)
-	if err != nil {
-		return nil, err
+	p, e := c.query(ctx, "/ads/query", []any{filter("adGroupId", adGroupID)})
+	if e != nil {
+		return nil, e
 	}
-	items := extractDataItems(payload)
-	results := make([]AdSummary, 0, len(items))
-	for _, itemAny := range items {
-		item := mapFromAny(itemAny)
-		if ad, ok := parseAdSummary(item); ok {
-			results = append(results, ad)
+	out := make([]AdSummary, 0)
+	for _, v := range extractDataItems(p) {
+		if item, ok := parseAdSummary(mapFromAny(v)); ok {
+			out = append(out, item)
 		}
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
-	return results, nil
+	return out, nil
 }
 
 func (c *Client) FetchAd(ctx context.Context, campaignID, adGroupID, adID int) (*AdSummary, error) {
+	if err := c.checkChild(ctx, "ads", adID, campaignID, adGroupID); err != nil {
+		return nil, err
+	}
+
 	auth, err := c.auth(ctx)
 	if err != nil {
 		return nil, err
 	}
-	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/campaigns/%d/adgroups/%d/ads/%d", appleAdsAPIBase, campaignID, adGroupID, adID), auth)
+	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/ads/%d", appleAdsAPIBase, adID), auth)
 	if err != nil {
 		return nil, err
 	}
 	item := extractDataObject(payload)
+	if e := c.enrichAds(ctx, []any{item}); e != nil {
+		return nil, e
+	}
 	ad, ok := parseAdSummary(item)
 	if !ok {
 		return nil, errors.New("invalid ad response payload")
@@ -559,53 +508,48 @@ func (c *Client) FetchAd(ctx context.Context, campaignID, adGroupID, adID int) (
 }
 
 func (c *Client) FindCampaignAds(ctx context.Context, campaignID int, selector map[string]any) ([]AdSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	p, e := c.querySelected(ctx, "/ads/query", selector, []any{filter("campaignId", campaignID)})
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/campaigns/%d/ads/find", appleAdsAPIBase, campaignID), auth, selector)
-	if err != nil {
-		return nil, err
-	}
-	items := extractDataItems(payload)
-	results := make([]AdSummary, 0, len(items))
-	for _, itemAny := range items {
-		item := mapFromAny(itemAny)
-		if ad, ok := parseAdSummary(item); ok {
-			results = append(results, ad)
+	out := make([]AdSummary, 0)
+	for _, v := range extractDataItems(p) {
+		if item, ok := parseAdSummary(mapFromAny(v)); ok {
+			out = append(out, item)
 		}
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
-	return results, nil
+	return out, nil
 }
 
 func (c *Client) FindOrgAds(ctx context.Context, selector map[string]any) ([]AdSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	p, e := c.querySelected(ctx, "/ads/query", selector, nil)
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/ads/find", appleAdsAPIBase), auth, selector)
-	if err != nil {
-		return nil, err
-	}
-	items := extractDataItems(payload)
-	results := make([]AdSummary, 0, len(items))
-	for _, itemAny := range items {
-		item := mapFromAny(itemAny)
-		if ad, ok := parseAdSummary(item); ok {
-			results = append(results, ad)
+	out := make([]AdSummary, 0)
+	for _, v := range extractDataItems(p) {
+		if item, ok := parseAdSummary(mapFromAny(v)); ok {
+			out = append(out, item)
 		}
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
-	return results, nil
+	return out, nil
 }
 
 func (c *Client) CreateAd(ctx context.Context, campaignID, adGroupID, creativeID int, name, status string) (*AdSummary, error) {
+	if strings.TrimSpace(name) == "" {
+		return nil, fmt.Errorf("Platform API ad creation requires --name")
+	}
+
+	if err := c.checkAdGroup(ctx, campaignID, adGroupID); err != nil {
+		return nil, err
+	}
+
 	auth, err := c.auth(ctx)
 	if err != nil {
 		return nil, err
 	}
 	body := map[string]any{
+		"adGroupId":  adGroupID,
 		"creativeId": creativeID,
 	}
 	if trimmed := strings.TrimSpace(name); trimmed != "" {
@@ -614,7 +558,7 @@ func (c *Client) CreateAd(ctx context.Context, campaignID, adGroupID, creativeID
 	if normalized := strings.ToUpper(strings.TrimSpace(status)); normalized != "" {
 		body["status"] = normalized
 	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/campaigns/%d/adgroups/%d/ads", appleAdsAPIBase, campaignID, adGroupID), auth, body)
+	payload, err := c.postJSON(ctx, appleAdsAPIBase+"/ads", auth, body)
 	if err != nil {
 		return nil, err
 	}
@@ -627,6 +571,10 @@ func (c *Client) CreateAd(ctx context.Context, campaignID, adGroupID, creativeID
 }
 
 func (c *Client) UpdateAd(ctx context.Context, campaignID, adGroupID, adID int, name, status string) (*AdSummary, error) {
+	if err := c.checkChild(ctx, "ads", adID, campaignID, adGroupID); err != nil {
+		return nil, err
+	}
+
 	auth, err := c.auth(ctx)
 	if err != nil {
 		return nil, err
@@ -638,7 +586,7 @@ func (c *Client) UpdateAd(ctx context.Context, campaignID, adGroupID, adID int, 
 	if normalized := strings.ToUpper(strings.TrimSpace(status)); normalized != "" {
 		body["status"] = normalized
 	}
-	payload, err := c.putJSON(ctx, fmt.Sprintf("%s/campaigns/%d/adgroups/%d/ads/%d", appleAdsAPIBase, campaignID, adGroupID, adID), auth, body)
+	payload, err := c.putJSON(ctx, fmt.Sprintf("%s/ads/%d", appleAdsAPIBase, adID), auth, body)
 	if err != nil {
 		return nil, err
 	}
@@ -651,63 +599,24 @@ func (c *Client) UpdateAd(ctx context.Context, campaignID, adGroupID, adID int, 
 }
 
 func (c *Client) DeleteAd(ctx context.Context, campaignID, adGroupID, adID int) error {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return err
+	if e := c.checkChild(ctx, "ads", adID, campaignID, adGroupID); e != nil {
+		return e
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, fmt.Sprintf("%s/campaigns/%d/adgroups/%d/ads/%d", appleAdsAPIBase, campaignID, adGroupID, adID), nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-	req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
-	respBody, statusCode, err := c.do(req)
-	if err != nil {
-		return err
-	}
-	if statusCode < 200 || statusCode > 299 {
-		return httpStatusError(statusCode, respBody)
-	}
-	return nil
+	return c.deleteEntity(ctx, "ads", adID)
 }
 
 func (c *Client) FetchCreatives(ctx context.Context) ([]CreativeSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	p, e := c.query(ctx, "/creatives/query", nil)
+	if e != nil {
+		return nil, e
 	}
-	results := make([]CreativeSummary, 0, campaignsPerPage)
-	offset := 0
-	seen := map[int]struct{}{}
-	for {
-		payload, err := c.getJSON(ctx, fmt.Sprintf("%s/creatives?offset=%d&limit=%d", appleAdsAPIBase, offset, campaignsPerPage), auth)
-		if err != nil {
-			return nil, err
+	out := make([]CreativeSummary, 0)
+	for _, v := range extractDataItems(p) {
+		if item, ok := parseCreativeSummary(mapFromAny(v)); ok {
+			out = append(out, item)
 		}
-		items := extractDataItems(payload)
-		for _, itemAny := range items {
-			item := mapFromAny(itemAny)
-			creative, ok := parseCreativeSummary(item)
-			if !ok {
-				continue
-			}
-			if _, exists := seen[creative.ID]; exists {
-				continue
-			}
-			seen[creative.ID] = struct{}{}
-			results = append(results, creative)
-		}
-		total := 0
-		if page, ok := payload["pagination"].(map[string]any); ok {
-			total = intFromAny(page["totalResults"])
-		}
-		if (total > 0 && offset+campaignsPerPage >= total) || len(items) < campaignsPerPage {
-			break
-		}
-		offset += campaignsPerPage
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
-	return results, nil
+	return out, nil
 }
 
 func (c *Client) FetchCreative(ctx context.Context, creativeID int) (*CreativeSummary, error) {
@@ -728,24 +637,17 @@ func (c *Client) FetchCreative(ctx context.Context, creativeID int) (*CreativeSu
 }
 
 func (c *Client) FindCreatives(ctx context.Context, selector map[string]any) ([]CreativeSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	p, e := c.querySelected(ctx, "/creatives/query", selector, nil)
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/creatives/find", appleAdsAPIBase), auth, selector)
-	if err != nil {
-		return nil, err
-	}
-	items := extractDataItems(payload)
-	results := make([]CreativeSummary, 0, len(items))
-	for _, itemAny := range items {
-		item := mapFromAny(itemAny)
-		if creative, ok := parseCreativeSummary(item); ok {
-			results = append(results, creative)
+	out := make([]CreativeSummary, 0)
+	for _, v := range extractDataItems(p) {
+		if item, ok := parseCreativeSummary(mapFromAny(v)); ok {
+			out = append(out, item)
 		}
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
-	return results, nil
+	return out, nil
 }
 
 func (c *Client) CreateCreative(ctx context.Context, adamID int, name, creativeType string, productPageID *string) (*CreativeSummary, error) {
@@ -761,7 +663,11 @@ func (c *Client) CreateCreative(ctx context.Context, adamID int, name, creativeT
 	if productPageID != nil && strings.TrimSpace(*productPageID) != "" {
 		body["productPageId"] = strings.TrimSpace(*productPageID)
 	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/creatives", appleAdsAPIBase), auth, body)
+	body = map[string]any{"name": name, "creativeType": creativeType, "creativeSpec": map[string]any{}, "destination": map[string]any{"destinationType": "APP_STORE_PRODUCT_PAGE", "parameters": map[string]any{"adamId": fmt.Sprint(adamID)}}}
+	if productPageID != nil {
+		mapFromAny(mapFromAny(body["destination"])["parameters"])["productPageId"] = *productPageID
+	}
+	payload, err := c.postJSON(ctx, appleAdsAPIBase+"/creatives", auth, body)
 	if err != nil {
 		return nil, err
 	}
@@ -774,204 +680,79 @@ func (c *Client) CreateCreative(ctx context.Context, adamID int, name, creativeT
 }
 
 func (c *Client) AddKeyword(ctx context.Context, campaignID, adGroupID int, text, matchType string, bidAmount *float64, currency *string, status string) error {
-	paths := []string{
-		fmt.Sprintf("%s/campaigns/%d/adgroups/%d/targetingkeywords", appleAdsAPIBase, campaignID, adGroupID),
-		fmt.Sprintf("%s/adgroups/%d/targetingkeywords", appleAdsAPIBase, adGroupID),
+	if e := c.checkAdGroup(ctx, campaignID, adGroupID); e != nil {
+		return e
 	}
-	normalizedStatus := keywordStatusPayload(status)
-	if normalizedStatus == "" {
-		normalizedStatus = "ACTIVE"
-	}
-	payload := map[string]any{
-		"text":      text,
-		"matchType": strings.ToUpper(strings.TrimSpace(matchType)),
-		"status":    normalizedStatus,
-	}
-	if payload["matchType"] == "" {
-		payload["matchType"] = "BROAD"
-	}
+	b := map[string]any{"adGroupId": adGroupID, "text": text, "matchType": firstNonEmptyString(strings.ToUpper(matchType), "BROAD"), "status": platformKeywordStatus(status)}
 	if bidAmount != nil {
-		ccy := "USD"
-		if currency != nil && strings.TrimSpace(*currency) != "" {
-			ccy = *currency
-		}
-		payload["bidAmount"] = map[string]any{
-			"amount":   fmt.Sprintf("%.4f", *bidAmount),
-			"currency": ccy,
-		}
+		b["bid"] = money(*bidAmount, firstNonEmptyString(stringPtrValue(currency), "USD"))
 	}
-
-	return c.tryKeywordBulkWrite(ctx, http.MethodPost, paths, []any{payload})
+	return c.bulkCreate(ctx, "keywords", []any{b})
 }
 
 func (c *Client) UpdateKeyword(ctx context.Context, campaignID, adGroupID, keywordID int, matchType, status string, bidAmount *float64, currency *string) error {
-	paths := []string{
-		fmt.Sprintf("%s/campaigns/%d/adgroups/%d/targetingkeywords", appleAdsAPIBase, campaignID, adGroupID),
-		fmt.Sprintf("%s/adgroups/%d/targetingkeywords", appleAdsAPIBase, adGroupID),
+	item, e := c.child(ctx, "keywords", keywordID, campaignID, adGroupID)
+	if e != nil {
+		return e
 	}
-	body := map[string]any{"id": keywordID}
-	if resolvedMatchType := strings.ToUpper(strings.TrimSpace(matchType)); resolvedMatchType != "" {
-		body["matchType"] = resolvedMatchType
+	if matchType != "" && !strings.EqualFold(matchType, stringFromAny(item["matchType"])) {
+		return unsupported("changing keyword matchType")
 	}
-	if normalized := keywordStatusPayload(status); normalized != "" {
-		body["status"] = normalized
+	b := map[string]any{}
+	if status != "" {
+		b["status"] = platformKeywordStatus(status)
 	}
 	if bidAmount != nil {
-		ccy := "USD"
-		if currency != nil && strings.TrimSpace(*currency) != "" {
-			ccy = *currency
-		}
-		body["bidAmount"] = map[string]any{
-			"amount":   fmt.Sprintf("%.4f", *bidAmount),
-			"currency": ccy,
-		}
+		b["bid"] = money(*bidAmount, firstNonEmptyString(stringPtrValue(currency), "USD"))
 	}
-	return c.tryKeywordBulkWrite(ctx, http.MethodPut, paths, []any{body})
+	_, e = c.writeEntity(ctx, http.MethodPut, "keywords", keywordID, b)
+	return e
 }
 
 func (c *Client) DeleteKeyword(ctx context.Context, campaignID, adGroupID, keywordID int) error {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return err
+	if e := c.checkChild(ctx, "keywords", keywordID, campaignID, adGroupID); e != nil {
+		return e
 	}
-	paths := []string{
-		fmt.Sprintf("%s/campaigns/%d/adgroups/%d/targetingkeywords/%d", appleAdsAPIBase, campaignID, adGroupID, keywordID),
-		fmt.Sprintf("%s/adgroups/%d/targetingkeywords/%d", appleAdsAPIBase, adGroupID, keywordID),
-	}
-	var lastErr error
-	for i, path := range paths {
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodDelete, path, nil)
-		if reqErr != nil {
-			return reqErr
-		}
-		req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-		req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
-		respBody, statusCode, doErr := c.do(req)
-		if doErr != nil {
-			return doErr
-		}
-		if statusCode >= 200 && statusCode <= 299 {
-			return nil
-		}
-		lastErr = httpStatusError(statusCode, respBody)
-		if apiErr, ok := lastErr.(*APIError); ok && apiErr.StatusCode == http.StatusNotFound && i == 0 {
-			continue
-		}
-		return lastErr
-	}
-	if lastErr != nil {
-		return lastErr
-	}
-	return errors.New("keyword delete failed")
+	return c.deleteEntity(ctx, "keywords", keywordID)
 }
 
 func (c *Client) AddNegativeKeywords(ctx context.Context, campaignID, adGroupID int, keywords []NegativeKeywordSummary) error {
-	paths := []string{
-		fmt.Sprintf("%s/campaigns/%d/adgroups/%d/negativekeywords", appleAdsAPIBase, campaignID, adGroupID),
-		fmt.Sprintf("%s/adgroups/%d/negativekeywords", appleAdsAPIBase, adGroupID),
-	}
-	entries := make([]any, 0, len(keywords))
-	for _, kw := range keywords {
-		entries = append(entries, negativeKeywordPayload(kw.Text, kw.MatchType))
-	}
-	return c.tryNegativeBulkWrite(ctx, http.MethodPost, paths, entries)
+	return c.addNegatives(ctx, campaignID, adGroupID, keywords)
 }
 
 func (c *Client) UpdateNegativeKeywordStatus(ctx context.Context, campaignID, adGroupID, negativeKeywordID int, status string) error {
-	basePaths := []string{
-		fmt.Sprintf("campaigns/%d/adgroups/%d/negativekeywords", campaignID, adGroupID),
-		fmt.Sprintf("adgroups/%d/negativekeywords", adGroupID),
+	if e := c.checkChild(ctx, "negative-keywords", negativeKeywordID, campaignID, adGroupID); e != nil {
+		return e
 	}
-	var lastErr error
-	for i, basePath := range basePaths {
-		err := c.updateNegativeKeywordStatusWithFallbacks(ctx, basePath, negativeKeywordID, status)
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == http.StatusNotFound && i == 0 {
-			continue
-		}
-		return err
-	}
-	if lastErr != nil {
-		return lastErr
-	}
-	return errors.New("negative keyword status update failed")
+	_, e := c.writeEntity(ctx, http.MethodPut, "negative-keywords", negativeKeywordID, map[string]any{"status": platformKeywordStatus(status)})
+	return e
 }
 
 func (c *Client) FetchNegativeKeywords(ctx context.Context, campaignID, adGroupID int) ([]NegativeKeywordSummary, error) {
-	paths := []string{
-		fmt.Sprintf("%s/campaigns/%d/adgroups/%d/negativekeywords", appleAdsAPIBase, campaignID, adGroupID),
-		fmt.Sprintf("%s/adgroups/%d/negativekeywords", appleAdsAPIBase, adGroupID),
-	}
-	var lastErr error
-	for i, path := range paths {
-		items, err := c.fetchNegativeKeywordsFromPath(ctx, path)
-		if err == nil {
-			return items, nil
-		}
-		lastErr = err
-		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == http.StatusNotFound && i == 0 {
-			continue
-		}
-		return nil, err
-	}
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, errors.New("negative keywords endpoint unavailable")
+	return c.negativeKeywords(ctx, campaignID, adGroupID)
 }
 
 func (c *Client) DeleteNegativeKeyword(ctx context.Context, campaignID, adGroupID, negativeKeywordID int) error {
-	paths := []string{
-		fmt.Sprintf("campaigns/%d/adgroups/%d/negativekeywords", campaignID, adGroupID),
-		fmt.Sprintf("adgroups/%d/negativekeywords", adGroupID),
+	if e := c.checkChild(ctx, "negative-keywords", negativeKeywordID, campaignID, adGroupID); e != nil {
+		return e
 	}
-	var lastErr error
-	for i, basePath := range paths {
-		err := c.deleteNegativeKeywordWithFallbacks(ctx, basePath, negativeKeywordID)
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == http.StatusNotFound && i == 0 {
-			continue
-		}
-		return err
-	}
-	if lastErr != nil {
-		return lastErr
-	}
-	return errors.New("negative keyword delete failed")
+	return c.deleteEntity(ctx, "negative-keywords", negativeKeywordID)
 }
 
 func (c *Client) AddCampaignNegativeKeywords(ctx context.Context, campaignID int, keywords []NegativeKeywordSummary) error {
-	if len(keywords) == 0 {
-		return nil
-	}
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return err
-	}
-	body := make([]any, 0, len(keywords))
-	for _, kw := range keywords {
-		body = append(body, negativeKeywordPayload(kw.Text, kw.MatchType))
-	}
-	_, err = c.postJSON(ctx, fmt.Sprintf("%s/campaigns/%d/negativekeywords/bulk", appleAdsAPIBase, campaignID), auth, body)
-	return err
+	return c.addNegatives(ctx, campaignID, 0, keywords)
 }
 
 func (c *Client) FetchCampaignNegativeKeywords(ctx context.Context, campaignID int) ([]NegativeKeywordSummary, error) {
-	return c.fetchNegativeKeywordsFromPath(ctx, fmt.Sprintf("%s/campaigns/%d/negativekeywords", appleAdsAPIBase, campaignID))
+	return c.negativeKeywords(ctx, campaignID, 0)
 }
 
 func (c *Client) DeleteCampaignNegativeKeyword(ctx context.Context, campaignID, negativeKeywordID int) error {
-	return c.deleteNegativeKeywordWithFallbacks(ctx, fmt.Sprintf("campaigns/%d/negativekeywords", campaignID), negativeKeywordID)
+	return c.DeleteNegativeKeyword(ctx, campaignID, 0, negativeKeywordID)
 }
 
 func (c *Client) UpdateCampaignNegativeKeywordStatus(ctx context.Context, campaignID, negativeKeywordID int, status string) error {
-	return c.updateNegativeKeywordStatusWithFallbacks(ctx, fmt.Sprintf("campaigns/%d/negativekeywords", campaignID), negativeKeywordID, status)
+	return c.UpdateNegativeKeywordStatus(ctx, campaignID, 0, negativeKeywordID, status)
 }
 
 func (c *Client) FetchAdGroupDailyMetrics(ctx context.Context, startDate, endDate time.Time, campaignID, adGroupID int) ([]AdGroupDailyReport, error) {
@@ -997,7 +778,7 @@ func (c *Client) FetchAdGroupDailyMetrics(ctx context.Context, startDate, endDat
 		"returnGrandTotals":          false,
 	}
 
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/reports/campaigns/%d/adgroups", appleAdsAPIBase, campaignID), auth, body)
+	payload, err := c.platformReport(ctx, "adgroups", campaignID, adGroupID, auth, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1064,6 +845,26 @@ func (c *Client) FetchAdGroupDailyMetrics(ctx context.Context, startDate, endDat
 		})
 	}
 
+	var campaignCurrency string
+	for i := range results {
+		row := &results[i]
+		if row.MetricValues != nil || row.Impressions != 0 || row.Taps != 0 || row.Spend != 0 || row.Installs != nil {
+			continue
+		}
+		if campaignCurrency == "" {
+			p, e := c.getJSON(ctx, fmt.Sprintf("%s/campaigns/%d", appleAdsAPIBase, campaignID), auth)
+			if e != nil {
+				return nil, e
+			}
+			campaignCurrency = stringFromAny(mapFromAny(mapFromAny(mapFromAny(p["data"])["dailyBudget"])["value"])["currency"])
+			if campaignCurrency == "" {
+				return nil, fmt.Errorf("campaign %d missing daily budget currency", campaignID)
+			}
+		}
+		zero := 0
+		row.Installs = &zero
+		row.CurrencyCode = &campaignCurrency
+	}
 	sort.Slice(results, func(i, j int) bool { return results[i].Date < results[j].Date })
 	return results, nil
 }
@@ -1090,12 +891,7 @@ func (c *Client) FetchKeywordDailyMetrics(ctx context.Context, startDate, endDat
 		"returnGrandTotals":          false,
 	}
 
-	payload, err := c.postJSON(
-		ctx,
-		fmt.Sprintf("%s/reports/campaigns/%d/adgroups/%d/keywords", appleAdsAPIBase, campaignID, adGroupID),
-		auth,
-		body,
-	)
+	payload, err := c.platformReport(ctx, "keywords", campaignID, adGroupID, auth, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1180,7 +976,12 @@ func (c *Client) FetchKeywordDailyMetrics(ctx context.Context, startDate, endDat
 		})
 	}
 
-	sort.Slice(results, func(i, j int) bool { return results[i].Date < results[j].Date })
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].KeywordID != results[j].KeywordID {
+			return results[i].KeywordID < results[j].KeywordID
+		}
+		return results[i].Date < results[j].Date
+	})
 	return results, nil
 }
 
@@ -1206,12 +1007,7 @@ func (c *Client) FetchSearchTermDailyMetrics(ctx context.Context, startDate, end
 		"returnGrandTotals":          false,
 	}
 
-	payload, err := c.postJSON(
-		ctx,
-		fmt.Sprintf("%s/reports/campaigns/%d/adgroups/%d/searchterms", appleAdsAPIBase, campaignID, adGroupID),
-		auth,
-		body,
-	)
+	payload, err := c.platformReport(ctx, "searchterms", campaignID, adGroupID, auth, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1309,7 +1105,7 @@ func (c *Client) FetchAdDailyMetrics(ctx context.Context, startDate, endDate tim
 		"returnGrandTotals":          false,
 	}
 
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/reports/campaigns/%d/ads", appleAdsAPIBase, campaignID), auth, body)
+	payload, err := c.platformReport(ctx, "ads", campaignID, 0, auth, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1406,146 +1202,29 @@ func (c *Client) CreateImpressionShareReport(
 	adamIDs []string,
 	searchTerms []string,
 ) (*CustomReport, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	conditions := make([]any, 0, 3)
-	countries = normalizeNonEmptyUpper(countries)
-	if len(countries) > 0 {
-		conditions = append(conditions, map[string]any{"field": "countryOrRegion", "operator": "IN", "values": countries})
-	}
-	adamIDs = normalizeNonEmpty(adamIDs)
-	if len(adamIDs) > 0 {
-		conditions = append(conditions, map[string]any{"field": "adamId", "operator": "IN", "values": adamIDs})
-	}
-	searchTerms = normalizeNonEmpty(searchTerms)
-	if len(searchTerms) > 0 {
-		conditions = append(conditions, map[string]any{"field": "searchTerm", "operator": "IN", "values": searchTerms})
-	}
-
-	resolvedGranularity := "DAILY"
-	if strings.ToUpper(strings.TrimSpace(granularity)) == "WEEKLY" {
-		resolvedGranularity = "WEEKLY"
-	}
-	reportName := strings.TrimSpace(name)
-	if reportName == "" {
-		reportName = "impression_share_report"
-	}
-	if len(reportName) > 50 {
-		reportName = reportName[:50]
-	}
-
-	payload := map[string]any{
-		"name":        reportName,
-		"granularity": resolvedGranularity,
-		"selector":    map[string]any{"conditions": conditions},
-	}
-
-	trimmedDateRange := strings.ToUpper(strings.TrimSpace(dateRange))
-	if resolvedGranularity == "WEEKLY" {
-		if trimmedDateRange == "" {
-			trimmedDateRange = "LAST_2_WEEKS"
-		}
-		payload["dateRange"] = trimmedDateRange
-	} else {
-		trimmedStart := strings.TrimSpace(startTime)
-		trimmedEnd := strings.TrimSpace(endTime)
-		if trimmedStart != "" && trimmedEnd != "" {
-			payload["startTime"] = trimmedStart
-			payload["endTime"] = trimmedEnd
-		} else {
-			now := time.Now().UTC()
-			end := now.AddDate(0, 0, -1)
-			start := end.AddDate(0, 0, -13)
-			payload["startTime"] = dateOnly(start)
-			payload["endTime"] = dateOnly(end)
-		}
-	}
-
-	resp, err := c.postJSON(ctx, appleAdsAPIBase+"/custom-reports", auth, payload)
-	if err != nil {
-		return nil, err
-	}
-	return parseCustomReport(mapFromAny(resp["data"])), nil
+	return nil, unsupported("saved custom reports; use sov-report (Insights)")
 }
 
 func (c *Client) FetchImpressionShareReport(ctx context.Context, reportID int64) (*CustomReport, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.getJSON(ctx, fmt.Sprintf("%s/custom-reports/%d", appleAdsAPIBase, reportID), auth)
-	if err != nil {
-		return nil, err
-	}
-	return parseCustomReport(mapFromAny(resp["data"])), nil
+	return nil, unsupported("saved custom reports; use sov-report (Insights)")
 }
 
 func (c *Client) FetchCustomReports(ctx context.Context) ([]CustomReport, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	results := make([]CustomReport, 0, customReportsPerPage)
-	seen := map[int64]struct{}{}
-	offset := 0
-	for {
-		resp, err := c.getJSON(ctx, fmt.Sprintf("%s/custom-reports?offset=%d&limit=%d", appleAdsAPIBase, offset, customReportsPerPage), auth)
-		if err != nil {
-			return nil, err
-		}
-		items := extractCustomReportItems(resp)
-		for _, itemAny := range items {
-			item := mapFromAny(itemAny)
-			report := parseCustomReport(item)
-			if report == nil {
-				continue
-			}
-			if report.ID <= 0 {
-				continue
-			}
-			if _, already := seen[report.ID]; already {
-				continue
-			}
-			results = append(results, *report)
-			seen[report.ID] = struct{}{}
-		}
-
-		total := 0
-		if page, ok := resp["pagination"].(map[string]any); ok {
-			total = intFromAny(page["totalResults"])
-		}
-		if (total > 0 && offset+customReportsPerPage >= total) || len(items) < customReportsPerPage {
-			break
-		}
-		offset += customReportsPerPage
-	}
-
-	sort.Slice(results, func(i, j int) bool { return results[i].ID > results[j].ID })
-	return results, nil
+	return nil, unsupported("saved custom reports; use sov-report (Insights)")
 }
 
 func (c *Client) FetchBudgetOrders(ctx context.Context) ([]BudgetOrderSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	p, e := c.query(ctx, "/shared-budgets/query", nil)
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/budgetorders", appleAdsAPIBase), auth)
-	if err != nil {
-		return nil, err
-	}
-	items := extractDataItems(payload)
-	results := make([]BudgetOrderSummary, 0, len(items))
-	for _, itemAny := range items {
-		if summary, ok := parseBudgetOrderSummary(mapFromAny(itemAny)); ok {
-			results = append(results, summary)
+	out := make([]BudgetOrderSummary, 0)
+	for _, v := range extractDataItems(p) {
+		if item, ok := parseBudgetOrderSummary(mapFromAny(v)); ok {
+			out = append(out, item)
 		}
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
-	return results, nil
+	return out, nil
 }
 
 func (c *Client) FetchBudgetOrder(ctx context.Context, budgetOrderID int) (*BudgetOrderSummary, error) {
@@ -1553,7 +1232,7 @@ func (c *Client) FetchBudgetOrder(ctx context.Context, budgetOrderID int) (*Budg
 	if err != nil {
 		return nil, err
 	}
-	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/budgetorders/%d", appleAdsAPIBase, budgetOrderID), auth)
+	payload, err := c.getJSON(ctx, fmt.Sprintf("%s/shared-budgets/%d", appleAdsAPIBase, budgetOrderID), auth)
 	if err != nil {
 		return nil, err
 	}
@@ -1565,39 +1244,47 @@ func (c *Client) FetchBudgetOrder(ctx context.Context, budgetOrderID int) (*Budg
 }
 
 func (c *Client) CreateBudgetOrder(ctx context.Context, order BudgetOrderSummary, orgIDs []int) (*BudgetOrderSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	if order.StartDate == nil || strings.TrimSpace(*order.StartDate) == "" {
+		return nil, fmt.Errorf("Platform budget orders require --startDate (tomorrow or later UTC)")
 	}
-	body := map[string]any{
-		"orgIds": orgIDsOrDefault(orgIDs, auth.orgID),
-		"bo":     budgetOrderRequestBody(order),
+	if order.PrimaryBuyerName == nil || order.PrimaryBuyerEmail == nil || order.BillingEmail == nil {
+		return nil, fmt.Errorf("Platform budget orders require --primaryBuyerName, --primaryBuyerEmail and --billingEmail")
 	}
-	payload, err := c.postJSON(ctx, fmt.Sprintf("%s/budgetorders", appleAdsAPIBase), auth, body)
-	if err != nil {
-		return nil, err
+
+	if len(orgIDs) > 0 {
+		return nil, unsupported("budget-orders --orgId (organization IDs are not ad account IDs); use --adAccountId")
 	}
-	summary, ok := parseBudgetOrderSummary(extractDataObject(payload))
+	a, e := c.auth(ctx)
+	if e != nil {
+		return nil, e
+	}
+	b := platformBudget(order)
+	b["adAccountIds"] = []int{intFromAny(a.adAccountID)}
+	p, e := c.postJSON(ctx, appleAdsAPIBase+"/shared-budgets", a, b)
+	if e != nil {
+		return nil, e
+	}
+	v, ok := parseBudgetOrderSummary(extractDataObject(p))
 	if !ok {
-		return nil, fmt.Errorf("invalid budget order response payload")
+		return nil, fmt.Errorf("invalid budget response")
 	}
-	return &summary, nil
+	return &v, nil
 }
 
 func (c *Client) UpdateBudgetOrder(ctx context.Context, budgetOrderID int, order BudgetOrderSummary) (*BudgetOrderSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
+	a, e := c.auth(ctx)
+	if e != nil {
+		return nil, e
 	}
-	payload, err := c.putJSON(ctx, fmt.Sprintf("%s/budgetorders/%d", appleAdsAPIBase, budgetOrderID), auth, map[string]any{"bo": budgetOrderRequestBody(order)})
-	if err != nil {
-		return nil, err
+	p, e := c.putJSON(ctx, fmt.Sprintf("%s/shared-budgets/%d", appleAdsAPIBase, budgetOrderID), a, platformBudget(order))
+	if e != nil {
+		return nil, e
 	}
-	summary, ok := parseBudgetOrderSummary(extractDataObject(payload))
+	v, ok := parseBudgetOrderSummary(extractDataObject(p))
 	if !ok {
-		return nil, fmt.Errorf("invalid budget order response payload")
+		return nil, fmt.Errorf("invalid budget response")
 	}
-	return &summary, nil
+	return &v, nil
 }
 
 func (c *Client) DownloadCustomReport(ctx context.Context, downloadURI string) ([]byte, error) {
@@ -1690,219 +1377,6 @@ func isTrustedAppleHost(host string) bool {
 	return host == "apple.com" || strings.HasSuffix(host, ".apple.com")
 }
 
-func (c *Client) tryKeywordBulkWrite(ctx context.Context, method string, paths []string, body any) error {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return err
-	}
-	var lastErr error
-	for i, path := range paths {
-		url := path + "/bulk"
-		var resp map[string]any
-		switch method {
-		case http.MethodPost:
-			resp, err = c.postJSON(ctx, url, auth, body)
-		case http.MethodPut:
-			resp, err = c.putJSON(ctx, url, auth, body)
-		default:
-			err = errors.New("unsupported method")
-		}
-		_ = resp
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == http.StatusNotFound && i == 0 {
-			continue
-		}
-		return err
-	}
-	if lastErr != nil {
-		return lastErr
-	}
-	return errors.New("keyword bulk write failed")
-}
-
-func (c *Client) tryNegativeBulkWrite(ctx context.Context, method string, paths []string, body any) error {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return err
-	}
-	var lastErr error
-	for i, path := range paths {
-		url := path + "/bulk"
-		var resp map[string]any
-		switch method {
-		case http.MethodPost:
-			resp, err = c.postJSON(ctx, url, auth, body)
-		case http.MethodPut:
-			resp, err = c.putJSON(ctx, url, auth, body)
-		default:
-			err = errors.New("unsupported method")
-		}
-		_ = resp
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == http.StatusNotFound && i == 0 {
-			continue
-		}
-		return err
-	}
-	if lastErr != nil {
-		return lastErr
-	}
-	return errors.New("negative bulk write failed")
-}
-
-func (c *Client) fetchNegativeKeywordsFromPath(ctx context.Context, path string) ([]NegativeKeywordSummary, error) {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]NegativeKeywordSummary, 0, campaignsPerPage)
-	offset := 0
-	for {
-		resp, err := c.getJSON(ctx, fmt.Sprintf("%s?offset=%d&limit=%d", path, offset, campaignsPerPage), auth)
-		if err != nil {
-			return nil, err
-		}
-		items, _ := resp["data"].([]any)
-		for _, itemAny := range items {
-			item := mapFromAny(itemAny)
-			id := intFromAny(item["id"])
-			if id <= 0 {
-				id = intFromAny(item["negativeKeywordId"])
-			}
-			if id <= 0 {
-				continue
-			}
-			text := strings.TrimSpace(firstNonEmptyString(
-				stringFromAny(item["text"]),
-				stringFromAny(item["keywordText"]),
-				stringFromAny(item["keyword"]),
-			))
-			if text == "" {
-				continue
-			}
-			matchType := strings.ToUpper(strings.TrimSpace(stringFromAny(item["matchType"])))
-			if matchType == "" {
-				matchType = "EXACT"
-			}
-			status := strings.ToUpper(strings.TrimSpace(stringFromAny(item["status"])))
-			if status == "" {
-				status = "ACTIVE"
-			}
-			results = append(results, NegativeKeywordSummary{ID: id, Text: text, MatchType: matchType, Status: status})
-		}
-
-		total := 0
-		if page, ok := resp["pagination"].(map[string]any); ok {
-			total = intFromAny(page["totalResults"])
-		}
-		if (total > 0 && offset+campaignsPerPage >= total) || len(items) < campaignsPerPage {
-			break
-		}
-		offset += campaignsPerPage
-	}
-	return results, nil
-}
-
-func (c *Client) deleteNegativeKeywordWithFallbacks(ctx context.Context, basePath string, negativeKeywordID int) error {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return err
-	}
-
-	itemURL := fmt.Sprintf("%s/%s/%d", appleAdsAPIBase, strings.TrimPrefix(basePath, "/"), negativeKeywordID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, itemURL, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-	req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
-	body, code, err := c.do(req)
-	if err == nil && code >= 200 && code <= 299 {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if code != 400 && code != 404 && code != 405 {
-		return httpStatusError(code, body)
-	}
-
-	bulkURL := fmt.Sprintf("%s/%s/bulk", appleAdsAPIBase, strings.TrimPrefix(basePath, "/"))
-	deleteBodies := []any{
-		[]any{map[string]any{"id": negativeKeywordID}},
-		[]any{negativeKeywordID},
-		map[string]any{"negativeKeywords": []any{map[string]any{"id": negativeKeywordID}}},
-		map[string]any{"negativeKeywordIds": []any{negativeKeywordID}},
-		map[string]any{"id": negativeKeywordID},
-	}
-	for _, deleteBody := range deleteBodies {
-		if bulkErr := c.bulkWrite(ctx, auth, bulkURL, http.MethodDelete, deleteBody); bulkErr == nil {
-			return nil
-		} else if apiErr, ok := bulkErr.(*APIError); !ok || (apiErr.StatusCode != 400 && apiErr.StatusCode != 404 && apiErr.StatusCode != 405) {
-			return bulkErr
-		}
-	}
-
-	putBodies := []any{
-		[]any{map[string]any{"id": negativeKeywordID, "status": "DELETED"}},
-		map[string]any{"negativeKeywords": []any{map[string]any{"id": negativeKeywordID, "status": "DELETED"}}},
-		map[string]any{"id": negativeKeywordID, "status": "DELETED"},
-		[]any{map[string]any{"id": negativeKeywordID, "status": "PAUSED"}},
-		map[string]any{"negativeKeywords": []any{map[string]any{"id": negativeKeywordID, "status": "PAUSED"}}},
-		map[string]any{"id": negativeKeywordID, "status": "PAUSED"},
-		[]any{map[string]any{"id": negativeKeywordID, "status": "INACTIVE"}},
-		map[string]any{"negativeKeywords": []any{map[string]any{"id": negativeKeywordID, "status": "INACTIVE"}}},
-		map[string]any{"id": negativeKeywordID, "status": "INACTIVE"},
-	}
-	for _, putBody := range putBodies {
-		if bulkErr := c.bulkWrite(ctx, auth, bulkURL, http.MethodPut, putBody); bulkErr == nil {
-			return nil
-		} else if apiErr, ok := bulkErr.(*APIError); !ok || (apiErr.StatusCode != 400 && apiErr.StatusCode != 404 && apiErr.StatusCode != 405) {
-			return bulkErr
-		}
-	}
-
-	return &APIError{StatusCode: 400, Message: fmt.Sprintf("Unable to remove negative keyword %d using supported API payload variants.", negativeKeywordID)}
-}
-
-func (c *Client) updateNegativeKeywordStatusWithFallbacks(ctx context.Context, basePath string, negativeKeywordID int, status string) error {
-	auth, err := c.auth(ctx)
-	if err != nil {
-		return err
-	}
-	normalized := negativeKeywordStatusPayload(status)
-	if normalized == "" {
-		return fmt.Errorf("Unsupported negative keyword status: %s", status)
-	}
-
-	bulkURL := fmt.Sprintf("%s/%s/bulk", appleAdsAPIBase, strings.TrimPrefix(basePath, "/"))
-	putBodies := []any{
-		[]any{map[string]any{"id": negativeKeywordID, "status": normalized}},
-		map[string]any{"negativeKeywords": []any{map[string]any{"id": negativeKeywordID, "status": normalized}}},
-		map[string]any{"id": negativeKeywordID, "status": normalized},
-	}
-	for _, putBody := range putBodies {
-		if bulkErr := c.bulkWrite(ctx, auth, bulkURL, http.MethodPut, putBody); bulkErr == nil {
-			return nil
-		} else if apiErr, ok := bulkErr.(*APIError); !ok || (apiErr.StatusCode != 400 && apiErr.StatusCode != 404 && apiErr.StatusCode != 405) {
-			return bulkErr
-		}
-	}
-
-	return &APIError{StatusCode: 400, Message: fmt.Sprintf("Unable to update negative keyword %d to %s using supported API payload variants.", negativeKeywordID, normalized)}
-}
-
-func (c *Client) bulkWrite(ctx context.Context, auth *authContext, url string, method string, body any) error {
-	_, err := c.requestJSON(ctx, method, url, auth, body)
-	return err
-}
-
 func (c *Client) getJSON(ctx context.Context, url string, auth *authContext) (map[string]any, error) {
 	return c.requestJSON(ctx, http.MethodGet, url, auth, nil)
 }
@@ -1912,6 +1386,13 @@ func (c *Client) postJSON(ctx context.Context, url string, auth *authContext, bo
 }
 
 func (c *Client) putJSON(ctx context.Context, url string, auth *authContext, body any) (map[string]any, error) {
+	if strings.HasPrefix(url, appleAdsAPIBase+"/campaigns/") {
+		b, e := platformCampaign(mapFromAny(body), auth.adAccountID, false)
+		if e != nil {
+			return nil, e
+		}
+		body = b
+	}
 	return c.requestJSON(ctx, http.MethodPut, url, auth, body)
 }
 
@@ -1936,7 +1417,10 @@ func (c *Client) requestJSON(ctx context.Context, method, url string, auth *auth
 	}
 	if auth != nil {
 		req.Header.Set("Authorization", "Bearer "+auth.accessToken)
-		req.Header.Set("X-AP-Context", "orgId="+auth.orgID)
+		req.Header.Set("X-AP-Context", "adAccountId="+auth.adAccountID)
+		if strings.HasPrefix(req.URL.Path, "/v1/shared-budgets") && req.Method != http.MethodGet && !strings.HasSuffix(req.URL.Path, "/query") {
+			req.Header.Del("X-AP-Context")
+		}
 	}
 
 	respBody, statusCode, err := c.do(req)
@@ -1947,20 +1431,34 @@ func (c *Client) requestJSON(ctx context.Context, method, url string, auth *auth
 		return nil, httpStatusError(statusCode, respBody)
 	}
 	if len(respBody) == 0 {
-		return map[string]any{}, nil
+		if method == http.MethodDelete {
+			return map[string]any{}, nil
+		}
+		return nil, fmt.Errorf("empty Platform API response; for writes, inspect current state before retrying")
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(respBody, &payload); err != nil {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
-	return payload, nil
+	if payload["error"] != nil {
+		return nil, httpStatusError(statusCode, respBody)
+	}
+	if _, ok := payload["result"]; !ok {
+		page := mapFromAny(payload["pagination"])
+		if strings.HasSuffix(url, "/query") && page != nil && page["pageSize"] != nil && intFromAny(page["pageSize"]) == 0 {
+			payload["result"] = []any{}
+		} else {
+			return nil, fmt.Errorf("Platform API response missing result")
+		}
+	}
+	if payload["result"] == nil && method != http.MethodDelete {
+		return nil, fmt.Errorf("Platform API returned null result")
+	}
+	return normalizeEnvelope(payload), nil
 }
 
 func getReportRows(payload map[string]any) []any {
-	data := mapFromAny(payload["data"])
-	reporting := mapFromAny(data["reportingDataResponse"])
-	rows, _ := reporting["row"].([]any)
-	return rows
+	return toAnySlice(mapFromAny(payload["data"])["rows"])
 }
 
 func parseMetrics(source map[string]any) parsedMetrics {
@@ -2093,6 +1591,7 @@ func parseCampaignSummary(source map[string]any, fallbackID int, fallbackName st
 		ServingStateReasons: toStringSlice(source["servingStateReasons"]),
 		BiddingStrategy:     strings.ToUpper(strings.TrimSpace(stringFromAny(source["biddingStrategy"]))),
 		TargetCPA:           parseMoneyAmount(mapFromAny(source["targetCpa"])),
+		BidCeiling:          parseMoneyAmount(mapFromAny(mapFromAny(source["bidStrategy"])["bid"])),
 		DailyBudgetAmount:   parseMoneyAmount(mapFromAny(source["dailyBudgetAmount"])),
 		BudgetAmount:        parseMoneyAmount(mapFromAny(source["budgetAmount"])),
 		SupplySources:       toStringSlice(source["supplySources"]),
@@ -2160,6 +1659,8 @@ func parseBudgetOrderSummary(source map[string]any) (BudgetOrderSummary, bool) {
 		name = fmt.Sprintf("Budget Order %d", id)
 	}
 	return BudgetOrderSummary{
+		AdAccountIDs:      intSliceFromAny(bo["adAccountIds"]),
+		SystemStatus:      stringFromAny(bo["systemStatus"]),
 		ID:                id,
 		Name:              name,
 		Status:            strings.ToUpper(strings.TrimSpace(stringFromAny(bo["status"]))),

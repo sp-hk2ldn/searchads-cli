@@ -1,6 +1,8 @@
 # Command Reference
 
-All commands support `--json` unless otherwise noted.
+All commands support `--json` except `status` (text output). Add `--adAccountId <id>` after the command/action, or set `SEARCHADS_AD_ACCOUNT_ID`.
+
+See [Platform API migration notes](PLATFORM_API_MIGRATION.md) for endpoint mappings and compatibility changes.
 
 ## status
 - `searchads status`
@@ -19,8 +21,8 @@ All commands support `--json` unless otherwise noted.
 
 Notes:
 - `--budgetAmount` is still accepted as a backwards-compatible alias for `--dailyBudgetAmount` on create/update budget commands.
-- Apple Ads API 5.2.1 supports create-only campaign total budgets through `--totalBudgetAmount`.
-- `MAX_CONVERSIONS` requires `--targetCpa` and only supports `APPSTORE_SEARCH_RESULTS`.
+- `--totalBudgetAmount` returns an unsupported error; no lifetime budget is silently converted into a shared budget.
+- `MAX_CONVERSIONS` only supports `APPSTORE_SEARCH_RESULTS`. `--targetCpa` returns an unsupported error; the Platform bid ceiling has different semantics.
 
 ## adgroups
 - `searchads adgroups list --campaignId <id>`
@@ -35,7 +37,7 @@ Notes:
 - `searchads ads list --campaignId <id> --adGroupId <id>`
 - `searchads ads find [--campaignId <id>] [--adGroupId <id>] [--status ENABLED,PAUSED] [--creativeType CUSTOM_PRODUCT_PAGE,DEFAULT_PRODUCT_PAGE] [--nameContains text] [--offset N] [--limit N]`
 - `searchads ads get --campaignId <id> --adGroupId <id> --adId <id>`
-- `searchads ads create --campaignId <id> --adGroupId <id> --creativeId <id> [--name text] [--status ENABLED|PAUSED]`
+- `searchads ads create --campaignId <id> --adGroupId <id> --creativeId <id> --name <text> [--status ENABLED|PAUSED]`
 - `searchads ads update --campaignId <id> --adGroupId <id> --adId <id> [--name text] [--status ENABLED|PAUSED]`
 - `searchads ads pause --campaignId <id> --adGroupId <id> --adId <id>`
 - `searchads ads activate --campaignId <id> --adGroupId <id> --adId <id>`
@@ -52,6 +54,8 @@ Notes:
 - `--productPageId` is required for `CUSTOM_PRODUCT_PAGE` creates.
 
 ## product-pages
+
+`countries` and `devices` are retained as explicit unsupported errors. `--expand` on locales is redundant.
 - `searchads product-pages list --adamId <id> [--state VISIBLE,HIDDEN] [--nameContains text]`
 - `searchads product-pages get --adamId <id> --productPageId <id>`
 - `searchads product-pages locales --adamId <id> --productPageId <id> [--expand]`
@@ -66,9 +70,11 @@ Notes:
 
 ## geo
 - `searchads geo search --query <text> [--countryCode GB] [--entity COUNTRY|ADMIN_AREA|LOCALITY] [--limit N]`
-- `searchads geo get --geoId <id>`
+- `searchads geo get --geoId <id> --entity Country|AdminArea|Locality`
 
 ## ad-rejections
+
+`assets` returns an unsupported error (no equivalent App Store asset endpoint).
 - `searchads ad-rejections find [--adamId <id> ...] [--productPageId <id> ...] [--reasonType <value> ...] [--reasonLevel <value> ...] [--reasonCode <value> ...] [--countryOrRegion GB,US] [--languageCode en-GB] [--supplySource APPSTORE_SEARCH_RESULTS] [--commentContains text] [--offset N] [--limit N]`
 - `searchads ad-rejections get --reasonId <id>`
 - `searchads ad-rejections assets --adamId <id> [--assetType APP_PREVIEW,SCREENSHOT] [--orientation LANDSCAPE,PORTRAIT] [--appPreviewDevice <value> ...] [--assetGenId <value> ...] [--includeDeleted] [--offset N] [--limit N]`
@@ -96,20 +102,24 @@ Notes:
 - `searchads negatives activate --campaignId <id> [--adGroupId <id>] (--negativeKeywordId <id> ... | --text <exactText> ...)`
 
 ## sov-report
-- `searchads sov-report --adamId <id> [--country GB,US] [--dateRange LAST_4_WEEKS] [--name report_name] [--out reports/sov]`
+- `searchads sov-report --adamId <id> [--country GB,US] [--dateRange LAST_WEEK|LAST_2_WEEKS|LAST_4_WEEKS] [--reportType ALL_SLOTS|FIRST_SLOT] [--name report_name] [--out reports/sov]`
 - `--appId` is accepted as an alias for `--adamId`.
 
 Outputs:
-- raw CSV
+- locally generated CSV of Insights data
 - normalized JSON
-- decision table JSON
+- decision table JSON for review alongside performance metrics (no inferred spend/conversion advice)
 
-## reports (Custom Reports)
+## reports (retired saved Custom Reports)
+
+These commands return explicit unsupported errors. Use `sov-report` for synchronous Insights and local exports.
 - `searchads reports list [--state COMPLETED,FAILED] [--nameContains text] [--limit N]`
 - `searchads reports get --reportId <id>`
 - `searchads reports download --reportId <id> [--out reports/custom/<id>.csv]`
 
 ## budget-orders
+
+Create/update require organization-level Line of Credit permissions. Create uses the selected ad account; legacy `--orgId` is rejected. Supply invoice details and a start date tomorrow or later in UTC.
 - `searchads budget-orders list`
 - `searchads budget-orders get --budgetOrderId <id>`
 - `searchads budget-orders create --name <name> --budgetAmount <number> [--budgetCurrency GBP] [--orgId <id> ...] [--startDate RFC3339] [--endDate RFC3339] [--orderNumber text] [--clientName text] [--primaryBuyerName text] [--primaryBuyerEmail email] [--billingEmail email]`
@@ -129,6 +139,6 @@ searchads keywords report \
 # Pause negatives by text at campaign level
 searchads negatives pause --campaignId 123 --text "free" --text "cheap" --json
 
-# Download a completed custom report
-searchads reports download --reportId 987654 --out reports/custom/987654.csv --json
+# Fetch current impression-share insights
+searchads sov-report --adamId 123456 --reportType ALL_SLOTS --out reports/sov --json
 ```

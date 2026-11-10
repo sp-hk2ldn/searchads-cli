@@ -176,6 +176,12 @@ func runKeywordsList(ctx context.Context, client *appleads.Client, args []string
 		exactText := parseStringSet(valuesForFlag(args, "--text"), false)
 		textContains := strings.ToLower(strings.TrimSpace(valueForFlag(args, "--textContains")))
 		statusFilters := parseStringSet(splitCSVValues(valuesForFlag(args, "--status")), true)
+		if _, ok := statusFilters["ACTIVE"]; ok {
+			statusFilters["ENABLED"] = struct{}{}
+		}
+		if _, ok := statusFilters["ENABLED"]; ok {
+			statusFilters["ACTIVE"] = struct{}{}
+		}
 		matchTypeFilters := parseStringSet(splitCSVValues(valuesForFlag(args, "--matchType")), true)
 
 		filtered := make([]appleads.KeywordSummary, 0, len(keywords))
@@ -261,6 +267,12 @@ func runKeywordsReport(ctx context.Context, client *appleads.Client, args []stri
 	exactText := parseStringSet(valuesForFlag(args, "--text"), false)
 	textContains := strings.ToLower(strings.TrimSpace(valueForFlag(args, "--textContains")))
 	statusFilters := parseStringSet(splitCSVValues(valuesForFlag(args, "--status")), true)
+	if _, ok := statusFilters["ACTIVE"]; ok {
+		statusFilters["ENABLED"] = struct{}{}
+	}
+	if _, ok := statusFilters["ENABLED"]; ok {
+		statusFilters["ACTIVE"] = struct{}{}
+	}
 	matchTypeFilters := parseStringSet(splitCSVValues(valuesForFlag(args, "--matchType")), true)
 
 	rows, err := client.FetchKeywordDailyMetrics(ctx, startDate, endDate, campaignID, adGroupID)
@@ -371,16 +383,7 @@ func runKeywordsReport(ctx context.Context, client *appleads.Client, args []stri
 		keywordRows = append(keywordRows, item)
 	}
 
-	sort.Slice(keywordRows, func(i, j int) bool {
-		leftSpend, _ := keywordRows[i]["spend"].(float64)
-		rightSpend, _ := keywordRows[j]["spend"].(float64)
-		if leftSpend == rightSpend {
-			leftTaps, _ := keywordRows[i]["taps"].(int)
-			rightTaps, _ := keywordRows[j]["taps"].(int)
-			return leftTaps > rightTaps
-		}
-		return leftSpend > rightSpend
-	})
+	sortKeywordReportRows(keywordRows)
 
 	totals := struct {
 		impressions int
@@ -735,4 +738,18 @@ func stringFromAny(v any) string {
 	default:
 		return ""
 	}
+}
+
+// Keep the text report's 30-row preview focused on the largest spenders.
+func sortKeywordReportRows(keywordRows []map[string]any) {
+	sort.Slice(keywordRows, func(i, j int) bool {
+		leftSpend, _ := keywordRows[i]["spend"].(float64)
+		rightSpend, _ := keywordRows[j]["spend"].(float64)
+		if leftSpend == rightSpend {
+			leftTaps, _ := keywordRows[i]["taps"].(int)
+			rightTaps, _ := keywordRows[j]["taps"].(int)
+			return leftTaps > rightTaps
+		}
+		return leftSpend > rightSpend
+	})
 }

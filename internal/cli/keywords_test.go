@@ -37,3 +37,23 @@ func TestSelectKeywordMutationTargetReturnsNilWhenExactMatchMissing(t *testing.T
 		t.Fatalf("expected nil when no exact match exists, got %+v", got)
 	}
 }
+
+func TestKeywordReportPreviewIncludesHighSpendLargeID(t *testing.T) {
+	rows := make([]map[string]any, 0, 33)
+	for id := 1; id <= 31; id++ {
+		rows = append(rows, map[string]any{"keywordId": id, "spend": 0.0, "taps": 0})
+	}
+	rows = append(rows,
+		map[string]any{"keywordId": 999999, "spend": 10.0, "taps": 2},
+		map[string]any{"keywordId": 999998, "spend": 10.0, "taps": 1},
+	)
+	sortKeywordReportRows(rows)
+	// Text output renders only these first 30 rows.
+	preview := rows[:30]
+	if preview[0]["keywordId"] != 999999 {
+		t.Fatalf("highest-spend keyword with more taps missing from preview lead: %v", preview)
+	}
+	if preview[1]["keywordId"] != 999998 {
+		t.Fatalf("equal-spend keyword not ordered by taps: %v", preview)
+	}
+}

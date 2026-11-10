@@ -85,7 +85,7 @@ func TestValidateCampaignCreateBiddingFlags(t *testing.T) {
 		{
 			name:     "max conversions requires target CPA",
 			strategy: "MAX_CONVERSIONS",
-			wantErr:  "targetCpa",
+			wantErr:  "",
 		},
 		{
 			name:      "target CPA requires max conversions",
@@ -128,5 +128,14 @@ func TestValidateCampaignCreateBiddingFlags(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestInsightCSVKeepsIntegerID(t *testing.T) {
+	if got := insightCSVValue(float64(6746324271)); got != "6746324271" {
+		t.Fatal(got)
+	}
+	if got := insightCSVValue(0.125); got != "0.125" {
+		t.Fatal(got)
 	}
 }

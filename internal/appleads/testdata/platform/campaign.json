@@ -1,0 +1,50 @@
+{
+  "result": [
+    {
+      "adAccountId": 8023100,
+      "bidStrategy": {
+        "bidStrategyGoal": "TAP",
+        "bidStrategyType": "MANUAL_CPT"
+      },
+      "billingEvent": "TAPS",
+      "creationTime": "2026-11-08T22:58:05.981",
+      "dailyBudget": {
+        "value": {
+          "amount": "4",
+          "currency": "GBP"
+        }
+      },
+      "deleted": false,
+      "displayStatus": "RUNNING",
+      "id": 2145087138,
+      "modificationTime": "2026-11-09T20:05:16.115",
+      "name": "2026-11-08 DW EN T2 CA Category Exact",
+      "paymentModel": "PAYG",
+      "promotedObjectId": "6746324271",
+      "promotedObjectType": "APPSTORE_APP",
+      "regulationResponses": [
+        {
+          "regulationType": "CAMPAIGN_SAPIN_LAW",
+          "responseValue": "NOT_ANSWERED"
+        }
+      ],
+      "startTime": "2026-11-08T23:11:44.524",
+      "status": "ENABLED",
+      "systemStatus": "RUNNING",
+      "systemStatusLimitingReasons": [],
+      "systemStatusReasons": [],
+      "targeting": {
+        "countryOrRegion": {
+          "include": [
+            "CA"
+          ]
+        },
+        "supplyPlacement": {
+          "include": [
+            "APPSTORE_SEARCH_RESULTS"
+          ]
+        }
+      }
+    }
+  ]
+}

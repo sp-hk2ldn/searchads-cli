@@ -12,6 +12,7 @@ import (
 const credentialsEnvJSON = "SEARCHADS_CREDENTIALS_JSON"
 
 type Credentials struct {
+	AdAccountID       string `json:"adAccountId,omitempty"`
 	ClientID          string `json:"clientId"`
 	TeamID            string `json:"teamId"`
 	KeyID             string `json:"keyId"`
@@ -57,6 +58,7 @@ func LoadCredentials() (*Credentials, error) {
 		TeamID:            teamID,
 		KeyID:             keyID,
 		PrivateKey:        privateKey,
+		AdAccountID:       strings.TrimSpace(os.Getenv("SEARCHADS_AD_ACCOUNT_ID")),
 		OrgID:             strings.TrimSpace(os.Getenv("SEARCHADS_ORG_ID")),
 		PopularityAdamID:  strings.TrimSpace(os.Getenv("SEARCHADS_POPULARITY_ADAM_ID")),
 		PopularityAdGroup: adGroupID,

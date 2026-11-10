@@ -26,10 +26,12 @@
 - After 7 days, recommend pausing or negating promoted terms that fail tap/install/CPA thresholds, but require explicit user confirmation before executing any destructive action.
 - Raise bids or create tailored custom product pages when terms perform strongly.
 
-## API limit guardrails
-- Impression Share report creation (`POST /api/v5/custom-reports`) is capped at 10 reports per 24 hours.
-- Impression Share report listing (`GET /api/v5/custom-reports`) supports max `limit=50` and is rate-limited at 150 requests per 15 minutes.
-- If creation requests return `429`, wait for the rolling 24-hour window to clear before retrying additional report creates.
+## Platform API execution
+- Read the [agent guidance](../../../docs/PLATFORM_API_AGENT_GUIDE.md) before executing the workflow.
+- Use performance reports for promotion thresholds; Insights alone has no taps, installs, spend, or CPA evidence.
+- Create and read back the destination exact keyword before adding its Discovery negative. Keyword match type cannot be changed in place.
+- A failed or interrupted write is not safe to retry automatically. Read current state, reconcile each intended keyword/negative, and resume only missing authorized changes.
+- Record the ad account and report timezone alongside the window. Search-term reports use account timezone (`ORTZ`); other performance reports use UTC.
 
 ## Explainability requirements
 - Save per-term reason codes:

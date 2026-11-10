@@ -9,7 +9,9 @@ on:
 
 jobs:
   gitleaks:
-    runs-on: ubuntu-latest
+    # No GitHub-hosted fallback; queue until a repo runner is registered.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, searchads-cli]
     permissions:
       contents: read
       security-events: write
@@ -26,7 +28,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   govulncheck:
-    runs-on: ubuntu-latest
+    # No GitHub-hosted fallback; queue until a repo runner is registered.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, searchads-cli]
 
     steps:
       - name: Checkout
