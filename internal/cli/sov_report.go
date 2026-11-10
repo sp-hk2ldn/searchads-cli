@@ -78,7 +78,7 @@ func RunSovReport(ctx context.Context, client *appleads.Client, args []string) {
 			if r[k] == nil {
 				fields = append(fields, "")
 			} else {
-				fields = append(fields, fmt.Sprint(r[k]))
+				fields = append(fields, insightCSVValue(r[k]))
 			}
 		}
 		_ = w.Write(fields)
@@ -125,4 +125,12 @@ func RunSovReport(ctx context.Context, client *appleads.Client, args []string) {
 		return
 	}
 	fmt.Printf("source=insights\nreportType=%s\nstate=COMPLETED\nrowCount=%d\ncsvPath=%s\nnormalizedJsonPath=%s\ndecisionTablePath=%s\n", reportType, len(rows), csvPath, normalizedPath, decisionPath)
+}
+
+// JSON numbers are decoded as float64; fixed notation keeps IDs exact in CSV.
+func insightCSVValue(v any) string {
+	if n, ok := v.(float64); ok {
+		return strconv.FormatFloat(n, 'f', -1, 64)
+	}
+	return fmt.Sprint(v)
 }

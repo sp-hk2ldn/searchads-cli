@@ -62,9 +62,10 @@ type CampaignSummary struct {
 	Status              string       `json:"status"`
 	DisplayStatus       string       `json:"displayStatus,omitempty"`
 	ServingStatus       string       `json:"servingStatus,omitempty"`
-	ServingStateReasons []string     `json:"servingStateReasons,omitempty"`
+	ServingStateReasons []string     `json:"servingStateReasons"`
+	BidCeiling          *MoneyAmount `json:"bidCeiling,omitempty"`
 	BiddingStrategy     string       `json:"biddingStrategy,omitempty"`
-	TargetCPA           *MoneyAmount `json:"targetCpa,omitempty"`
+	TargetCPA           *MoneyAmount `json:"targetCpa"`
 	DailyBudgetAmount   *MoneyAmount `json:"dailyBudgetAmount,omitempty"`
 	BudgetAmount        *MoneyAmount `json:"budgetAmount,omitempty"`
 	SupplySources       []string     `json:"supplySources,omitempty"`

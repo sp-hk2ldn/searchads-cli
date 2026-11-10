@@ -384,14 +384,9 @@ func runKeywordsReport(ctx context.Context, client *appleads.Client, args []stri
 	}
 
 	sort.Slice(keywordRows, func(i, j int) bool {
-		leftSpend, _ := keywordRows[i]["spend"].(float64)
-		rightSpend, _ := keywordRows[j]["spend"].(float64)
-		if leftSpend == rightSpend {
-			leftTaps, _ := keywordRows[i]["taps"].(int)
-			rightTaps, _ := keywordRows[j]["taps"].(int)
-			return leftTaps > rightTaps
-		}
-		return leftSpend > rightSpend
+		left, _ := keywordRows[i]["keywordId"].(int)
+		right, _ := keywordRows[j]["keywordId"].(int)
+		return left < right
 	})
 
 	totals := struct {

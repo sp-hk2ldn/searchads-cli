@@ -1,0 +1,73 @@
+{
+  "result": {
+    "rows": [
+      {
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "2.867",
+            "currency": "GBP"
+          },
+          "impressions": 12,
+          "taps": 2,
+          "ttr": 0.1667,
+          "cpt": {
+            "amount": "1.4335",
+            "currency": "GBP"
+          },
+          "tapInstalls": 0,
+          "tapInstallCPI": {
+            "amount": "0",
+            "currency": "GBP"
+          },
+          "totalNewDownloads": 0,
+          "totalRedownloads": 0,
+          "viewInstalls": 0,
+          "totalInstalls": 0,
+          "tapNewDownloads": 0,
+          "tapRedownloads": 0,
+          "viewNewDownloads": 0,
+          "viewRedownloads": 0,
+          "totalAvgCPI": {
+            "amount": "0",
+            "currency": "GBP"
+          },
+          "totalInstallRate": 0.0,
+          "tapInstallRate": 0.0,
+          "tapPreOrdersPlaced": 0,
+          "viewPreOrdersPlaced": 0,
+          "totalPreOrdersPlaced": 0
+        },
+        "metadata": {
+          "campaignId": 2145027862,
+          "adAccountId": 8023100,
+          "searchTermText": "sleep",
+          "searchTermSource": "TARGETED",
+          "keyword": {
+            "deleted": false,
+            "id": 2376904832,
+            "text": "sleep app",
+            "status": "ENABLED",
+            "matchType": "EXACT",
+            "bid": {
+              "amount": "1.9",
+              "currency": "GBP"
+            },
+            "modificationTime": "2026-11-02T18:48:05.350",
+            "creationTime": "2026-11-02T18:48:05.350",
+            "displayStatus": "CAMPAIGN_ON_HOLD"
+          },
+          "adGroupId": 2152459070,
+          "adGroup": {
+            "name": "Sleep aid exact",
+            "deleted": false
+          }
+        }
+      }
+    ]
+  },
+  "pagination": {
+    "offset": 0,
+    "pageSize": 1,
+    "totalCount": 1
+  }
+}

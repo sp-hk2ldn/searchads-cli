@@ -130,3 +130,12 @@ func TestValidateCampaignCreateBiddingFlags(t *testing.T) {
 		})
 	}
 }
+
+func TestInsightCSVKeepsIntegerID(t *testing.T) {
+	if got := insightCSVValue(float64(6746324271)); got != "6746324271" {
+		t.Fatal(got)
+	}
+	if got := insightCSVValue(0.125); got != "0.125" {
+		t.Fatal(got)
+	}
+}

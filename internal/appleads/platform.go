@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -143,12 +144,23 @@ func normalizeEntity(v any) any {
 			x["stateReasons"] = x["systemStatusReasons"]
 		}
 		if b, ok := x["systemStatus"]; ok {
+			x["servingStatus"] = b
+			x["servingStateReasons"] = x["systemStatusReasons"]
 			if _, exists := x["displayStatus"]; !exists {
 				x["displayStatus"] = b
 			}
 		}
 		if t := mapFromAny(x["targeting"]); t != nil {
 			x["supplySources"] = mapFromAny(t["supplyPlacement"])["include"]
+			// Legacy channels describe placements, not promoted-object types.
+			for _, placement := range toStringSlice(x["supplySources"]) {
+				switch placement {
+				case "APPSTORE_SEARCH_RESULTS":
+					x["adChannelType"] = "SEARCH"
+				case "APPSTORE_SEARCH_TAB", "APPSTORE_TODAY_TAB", "APPSTORE_PRODUCT_PAGES":
+					x["adChannelType"] = "DISPLAY"
+				}
+			}
 		}
 		if d := mapFromAny(x["destination"]); d != nil {
 			p := mapFromAny(d["parameters"])
@@ -195,7 +207,13 @@ func (c *Client) queryBody(ctx context.Context, path string, a *authContext, bod
 		var rows []any
 		var ok bool
 		if report {
-			rows, ok = mapFromAny(p["data"])["rows"].([]any)
+			data := mapFromAny(p["data"])
+			rows, ok = data["rows"].([]any)
+			// Observed empty reports use result:{} with explicit zero pagination.
+			page := mapFromAny(p["pagination"])
+			if !ok && data != nil && len(data) == 0 && page["pageSize"] != nil && intFromAny(page["pageSize"]) == 0 {
+				rows, ok = []any{}, true
+			}
 			if !ok {
 				if empty, isArray := p["data"].([]any); isArray && len(empty) == 0 {
 					rows = []any{}
@@ -230,6 +248,13 @@ func (c *Client) queryBody(ctx context.Context, path string, a *authContext, bod
 			break
 		}
 	}
+	sort.SliceStable(all, func(i, j int) bool {
+		left, right := mapFromAny(all[i]), mapFromAny(all[j])
+		if report {
+			left, right = mapFromAny(left["metadata"]), mapFromAny(right["metadata"])
+		}
+		return intFromAny(left["id"]) < intFromAny(right["id"])
+	})
 	if report {
 		return map[string]any{"data": map[string]any{"rows": all}}, nil
 	}

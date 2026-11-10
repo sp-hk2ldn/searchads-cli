@@ -845,6 +845,26 @@ func (c *Client) FetchAdGroupDailyMetrics(ctx context.Context, startDate, endDat
 		})
 	}
 
+	var campaignCurrency string
+	for i := range results {
+		row := &results[i]
+		if row.MetricValues != nil || row.Impressions != 0 || row.Taps != 0 || row.Spend != 0 || row.Installs != nil {
+			continue
+		}
+		if campaignCurrency == "" {
+			p, e := c.getJSON(ctx, fmt.Sprintf("%s/campaigns/%d", appleAdsAPIBase, campaignID), auth)
+			if e != nil {
+				return nil, e
+			}
+			campaignCurrency = stringFromAny(mapFromAny(mapFromAny(mapFromAny(p["data"])["dailyBudget"])["value"])["currency"])
+			if campaignCurrency == "" {
+				return nil, fmt.Errorf("campaign %d missing daily budget currency", campaignID)
+			}
+		}
+		zero := 0
+		row.Installs = &zero
+		row.CurrencyCode = &campaignCurrency
+	}
 	sort.Slice(results, func(i, j int) bool { return results[i].Date < results[j].Date })
 	return results, nil
 }
@@ -956,7 +976,12 @@ func (c *Client) FetchKeywordDailyMetrics(ctx context.Context, startDate, endDat
 		})
 	}
 
-	sort.Slice(results, func(i, j int) bool { return results[i].Date < results[j].Date })
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].KeywordID != results[j].KeywordID {
+			return results[i].KeywordID < results[j].KeywordID
+		}
+		return results[i].Date < results[j].Date
+	})
 	return results, nil
 }
 
@@ -1566,6 +1591,7 @@ func parseCampaignSummary(source map[string]any, fallbackID int, fallbackName st
 		ServingStateReasons: toStringSlice(source["servingStateReasons"]),
 		BiddingStrategy:     strings.ToUpper(strings.TrimSpace(stringFromAny(source["biddingStrategy"]))),
 		TargetCPA:           parseMoneyAmount(mapFromAny(source["targetCpa"])),
+		BidCeiling:          parseMoneyAmount(mapFromAny(mapFromAny(source["bidStrategy"])["bid"])),
 		DailyBudgetAmount:   parseMoneyAmount(mapFromAny(source["dailyBudgetAmount"])),
 		BudgetAmount:        parseMoneyAmount(mapFromAny(source["budgetAmount"])),
 		SupplySources:       toStringSlice(source["supplySources"]),
