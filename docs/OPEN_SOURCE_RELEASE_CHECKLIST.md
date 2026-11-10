@@ -27,7 +27,7 @@ Use this checklist before publishing `searchads-cli` publicly.
 - [ ] Keep `docs/COMMANDS.md` examples current and copy-pasteable.
 - [ ] Add a short “Quick start” section (set env vars, run first command).
 - [ ] Document API rate limits/retries and common API error meanings.
-- [ ] Document supported Apple Ads API version (`/api/v5` today).
+- [ ] Document supported Apple Ads API version (`https://api.ads.apple.com/v1`).
 
 ## 5. Versioning and releases
 - [ ] Decide semver policy (`v0.x` fast iteration vs `v1.0.0` stability).

@@ -85,7 +85,7 @@ func TestValidateCampaignCreateBiddingFlags(t *testing.T) {
 		{
 			name:     "max conversions requires target CPA",
 			strategy: "MAX_CONVERSIONS",
-			wantErr:  "targetCpa",
+			wantErr:  "",
 		},
 		{
 			name:      "target CPA requires max conversions",

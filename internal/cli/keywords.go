@@ -176,6 +176,12 @@ func runKeywordsList(ctx context.Context, client *appleads.Client, args []string
 		exactText := parseStringSet(valuesForFlag(args, "--text"), false)
 		textContains := strings.ToLower(strings.TrimSpace(valueForFlag(args, "--textContains")))
 		statusFilters := parseStringSet(splitCSVValues(valuesForFlag(args, "--status")), true)
+		if _, ok := statusFilters["ACTIVE"]; ok {
+			statusFilters["ENABLED"] = struct{}{}
+		}
+		if _, ok := statusFilters["ENABLED"]; ok {
+			statusFilters["ACTIVE"] = struct{}{}
+		}
 		matchTypeFilters := parseStringSet(splitCSVValues(valuesForFlag(args, "--matchType")), true)
 
 		filtered := make([]appleads.KeywordSummary, 0, len(keywords))
@@ -261,6 +267,12 @@ func runKeywordsReport(ctx context.Context, client *appleads.Client, args []stri
 	exactText := parseStringSet(valuesForFlag(args, "--text"), false)
 	textContains := strings.ToLower(strings.TrimSpace(valueForFlag(args, "--textContains")))
 	statusFilters := parseStringSet(splitCSVValues(valuesForFlag(args, "--status")), true)
+	if _, ok := statusFilters["ACTIVE"]; ok {
+		statusFilters["ENABLED"] = struct{}{}
+	}
+	if _, ok := statusFilters["ENABLED"]; ok {
+		statusFilters["ACTIVE"] = struct{}{}
+	}
 	matchTypeFilters := parseStringSet(splitCSVValues(valuesForFlag(args, "--matchType")), true)
 
 	rows, err := client.FetchKeywordDailyMetrics(ctx, startDate, endDate, campaignID, adGroupID)

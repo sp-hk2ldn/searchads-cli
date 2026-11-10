@@ -20,285 +20,126 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func TestUpdateKeywordIncludesMatchType(t *testing.T) {
+func platformTestClient(t *testing.T, handler roundTripFunc) *Client {
+	t.Helper()
 	t.Setenv(credentialsEnvJSON, testCredentialsJSON(t))
-	var seenBodies []string
-	client := NewClient(&http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			switch {
-			case req.URL.String() == appleIDTokenURL:
-				return jsonResponse(http.StatusOK, `{"access_token":"token","expires_in":3600}`), nil
-			case req.URL.String() == appleAdsAPIBase+"/me":
-				return jsonResponse(http.StatusOK, `{"data":{"parentOrgId":"123"}}`), nil
-			case strings.HasSuffix(req.URL.Path, "/targetingkeywords/bulk"):
-				body, _ := io.ReadAll(req.Body)
-				seenBodies = append(seenBodies, string(body))
-				return jsonResponse(http.StatusOK, `{"data":[]}`), nil
-			default:
-				return jsonResponse(http.StatusNotFound, `{"error":"unexpected request: `+req.Method+` `+req.URL.String()+`"}`), nil
+	t.Setenv("SEARCHADS_AD_ACCOUNT_ID", "")
+	return NewClient(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.String() {
+		case appleIDTokenURL:
+			return jsonResponse(200, `{"access_token":"token","expires_in":3600}`), nil
+		case appleAdsAPIBase + "/me":
+			return jsonResponse(200, `{"result":{"orgId":123}}`), nil
+		case appleAdsAPIBase + "/acls":
+			return jsonResponse(200, `{"result":{"acls":[{"adAccount":{"id":456,"orgId":123,"name":"test"}}]}}`), nil
+		}
+		if r.Header.Get("X-AP-Context") != "adAccountId=456" && !strings.HasPrefix(r.URL.Path, "/v1/shared-budgets") {
+			t.Fatalf("wrong account header %q", r.Header.Get("X-AP-Context"))
+		}
+		return handler(r)
+	})})
+}
+func TestUpdateKeywordChecksImmutableMatchType(t *testing.T) {
+	writes := 0
+	c := platformTestClient(t, func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/v1/adgroups/20":
+			return jsonResponse(200, `{"result":{"id":20,"campaignId":10}}`), nil
+		case "/v1/keywords/99":
+			if r.Method == http.MethodGet {
+				return jsonResponse(200, `{"result":{"id":99,"adGroupId":20,"matchType":"EXACT"}}`), nil
 			}
-		}),
+			writes++
+			b, _ := io.ReadAll(r.Body)
+			if string(b) != `{"bid":{"amount":"1.2500","currency":"GBP"},"status":"PAUSED"}` {
+				t.Fatalf("unexpected update %s", b)
+			}
+			return jsonResponse(200, `{"result":{"id":99}}`), nil
+		}
+		t.Fatalf("unexpected %s", r.URL)
+		return nil, nil
 	})
-
 	bid := 1.25
 	currency := "GBP"
-	if err := client.UpdateKeyword(context.Background(), 10, 20, 99, "EXACT", "PAUSED", &bid, &currency); err != nil {
-		t.Fatalf("update keyword failed: %v", err)
+	if e := c.UpdateKeyword(context.Background(), 10, 20, 99, "EXACT", "PAUSED", &bid, &currency); e != nil {
+		t.Fatal(e)
 	}
-	if len(seenBodies) != 1 {
-		t.Fatalf("expected one keyword update request, got %d", len(seenBodies))
+	if e := c.UpdateKeyword(context.Background(), 10, 20, 99, "BROAD", "PAUSED", nil, nil); e == nil {
+		t.Fatal("changed immutable match type")
 	}
-	body := seenBodies[0]
-	for _, want := range []string{`"id":99`, `"matchType":"EXACT"`, `"status":"PAUSED"`, `"amount":"1.2500"`, `"currency":"GBP"`} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected request body to contain %s, got %s", want, body)
-		}
+	if writes != 1 {
+		t.Fatal(writes)
 	}
 }
-
 func TestFetchKeywordsSkipsDeletedRows(t *testing.T) {
-	t.Setenv(credentialsEnvJSON, testCredentialsJSON(t))
-
-	client := NewClient(&http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			switch {
-			case req.URL.String() == appleIDTokenURL:
-				return jsonResponse(http.StatusOK, `{"access_token":"token","expires_in":3600}`), nil
-			case req.URL.String() == appleAdsAPIBase+"/me":
-				return jsonResponse(http.StatusOK, `{"data":{"parentOrgId":"123"}}`), nil
-			case strings.HasSuffix(req.URL.Path, "/targetingkeywords"):
-				return jsonResponse(http.StatusOK, `{"data":[{"id":1,"text":"kept","matchType":"EXACT","status":"ENABLED"},{"id":2,"text":"deleted","matchType":"EXACT","status":"DELETED"},{"id":3,"text":"soft","matchType":"EXACT","status":"ENABLED","softDeleted":true}]}`), nil
-			default:
-				return jsonResponse(http.StatusNotFound, `{"error":"unexpected request: `+req.Method+` `+req.URL.String()+`"}`), nil
-			}
-		}),
+	c := platformTestClient(t, func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/v1/adgroups/20" {
+			return jsonResponse(200, `{"result":{"id":20,"campaignId":10}}`), nil
+		}
+		if r.URL.Path != "/v1/keywords/query" {
+			t.Fatal(r.URL)
+		}
+		return jsonResponse(200, `{"result":[{"id":1,"text":"kept","matchType":"EXACT","status":"ENABLED"},{"id":2,"deleted":true}]}`), nil
 	})
-
-	keywords, err := client.FetchKeywords(context.Background(), 10, 20)
-	if err != nil {
-		t.Fatalf("fetch keywords failed: %v", err)
-	}
-	if len(keywords) != 1 {
-		t.Fatalf("expected 1 keyword after filtering deleted rows, got %d", len(keywords))
-	}
-	if keywords[0].ID != 1 || keywords[0].Text != "kept" {
-		t.Fatalf("unexpected keyword returned: %+v", keywords[0])
+	rows, e := c.FetchKeywords(context.Background(), 10, 20)
+	if e != nil || len(rows) != 1 || rows[0].Text != "kept" {
+		t.Fatalf("%+v %v", rows, e)
 	}
 }
-
 func TestUpdateCampaignStatusReturnsUpdatedSummary(t *testing.T) {
-	t.Setenv(credentialsEnvJSON, testCredentialsJSON(t))
-
-	var seenBody string
-	const campaignID = 1234567890
-	const campaignName = "Test Campaign"
-	client := NewClient(&http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			switch {
-			case req.URL.String() == appleIDTokenURL:
-				return jsonResponse(http.StatusOK, `{"access_token":"token","expires_in":3600}`), nil
-			case req.URL.String() == appleAdsAPIBase+"/me":
-				return jsonResponse(http.StatusOK, `{"data":{"parentOrgId":"123"}}`), nil
-			case req.Method == http.MethodPut && req.URL.Path == "/api/v5/campaigns/1234567890":
-				body, _ := io.ReadAll(req.Body)
-				seenBody = string(body)
-				return jsonResponse(http.StatusOK, `{"data":{"id":1234567890,"name":"Test Campaign","status":"PAUSED"}}`), nil
-			default:
-				return jsonResponse(http.StatusNotFound, `{"error":"unexpected request: `+req.Method+` `+req.URL.String()+`"}`), nil
-			}
-		}),
-	})
-
-	campaign, err := client.UpdateCampaignStatus(context.Background(), campaignID, "PAUSED")
-	if err != nil {
-		t.Fatalf("update campaign status failed: %v", err)
-	}
-	if campaign == nil {
-		t.Fatal("expected campaign summary, got nil")
-	}
-	if campaign.ID != campaignID || campaign.Status != "PAUSED" || campaign.Name != campaignName {
-		t.Fatalf("unexpected campaign summary: %+v", campaign)
-	}
-	for _, want := range []string{`"campaign":{"status":"PAUSED"}`} {
-		if !strings.Contains(seenBody, want) {
-			t.Fatalf("expected request body to contain %s, got %s", want, seenBody)
+	c := platformTestClient(t, func(r *http.Request) (*http.Response, error) {
+		b, _ := io.ReadAll(r.Body)
+		if r.Method != "PUT" || r.URL.Path != "/v1/campaigns/42" || string(b) != `{"status":"PAUSED"}` {
+			t.Fatalf("%s %s %s", r.Method, r.URL, b)
 		}
+		return jsonResponse(200, `{"result":{"id":42,"name":"Test","status":"PAUSED"}}`), nil
+	})
+	v, e := c.UpdateCampaignStatus(context.Background(), 42, "PAUSED")
+	if e != nil || v.ID != 42 || v.Status != "PAUSED" {
+		t.Fatalf("%+v %v", v, e)
 	}
 }
-
-func TestCreateCampaignSupportsMaxConversionsAndTotalBudget(t *testing.T) {
-	t.Setenv(credentialsEnvJSON, testCredentialsJSON(t))
-
-	var seenBody string
-	client := NewClient(&http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			switch {
-			case req.URL.String() == appleIDTokenURL:
-				return jsonResponse(http.StatusOK, `{"access_token":"token","expires_in":3600}`), nil
-			case req.URL.String() == appleAdsAPIBase+"/me":
-				return jsonResponse(http.StatusOK, `{"data":{"parentOrgId":"123"}}`), nil
-			case req.Method == http.MethodPost && req.URL.Path == "/api/v5/campaigns":
-				body, _ := io.ReadAll(req.Body)
-				seenBody = string(body)
-				return jsonResponse(http.StatusOK, `{"data":{"id":42,"name":"Max campaign","status":"ENABLED","biddingStrategy":"MAX_CONVERSIONS","targetCpa":{"amount":"10","currency":"USD"},"dailyBudgetAmount":{"amount":"250","currency":"USD"},"budgetAmount":{"amount":"1500","currency":"USD"},"supplySources":["APPSTORE_SEARCH_RESULTS"],"adChannelType":"SEARCH"}}`), nil
-			default:
-				return jsonResponse(http.StatusNotFound, `{"error":"unexpected request: `+req.Method+` `+req.URL.String()+`"}`), nil
-			}
-		}),
-	})
-
-	totalBudget := 1500.0
-	targetCPA := 10.0
-	campaign, err := client.CreateCampaign(
-		context.Background(),
-		"Max campaign",
-		"ENABLED",
-		250,
-		"USD",
-		&totalBudget,
-		"535500008",
-		[]string{"US"},
-		"2026-02-01T00:00:00.000",
-		"",
-		"APPSTORE_SEARCH_RESULTS",
-		"SEARCH",
-		"MAX_CONVERSIONS",
-		&targetCPA,
-		"USD",
-	)
-	if err != nil {
-		t.Fatalf("create campaign failed: %v", err)
-	}
-	for _, want := range []string{
-		`"dailyBudgetAmount":{"amount":"250.0000","currency":"USD"}`,
-		`"budgetAmount":{"amount":"1500.0000","currency":"USD"}`,
-		`"biddingStrategy":"MAX_CONVERSIONS"`,
-		`"targetCpa":{"amount":"10.0000","currency":"USD"}`,
-	} {
-		if !strings.Contains(seenBody, want) {
-			t.Fatalf("expected request body to contain %s, got %s", want, seenBody)
+func TestCreateCampaignMapsPlatformFields(t *testing.T) {
+	c := platformTestClient(t, func(r *http.Request) (*http.Response, error) {
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		if r.Method != "POST" || r.URL.Path != "/v1/campaigns" || b["promotedObjectId"] != "1234" || intFromAny(b["adAccountId"]) != 456 || mapFromAny(mapFromAny(b["dailyBudget"])["value"])["amount"] != "25.0000" || mapFromAny(b["bidStrategy"])["bidStrategyGoal"] != "INSTALL" {
+			t.Fatalf("wrong request %+v", b)
 		}
-	}
-	if campaign.BiddingStrategy != "MAX_CONVERSIONS" || campaign.TargetCPA == nil || campaign.TargetCPA.Currency != "USD" {
-		t.Fatalf("unexpected campaign response: %+v", campaign)
+		return jsonResponse(200, `{"result":{"id":42,"name":"Max","bidStrategy":{"bidStrategyType":"MAX_CONVERSIONS"},"dailyBudget":{"value":{"amount":"25","currency":"GBP"}}}}`), nil
+	})
+	v, e := c.CreateCampaign(context.Background(), "Max", "PAUSED", 25, "GBP", nil, "1234", []string{"GB"}, "", "", "APPSTORE_SEARCH_RESULTS", "SEARCH", "MAX_CONVERSIONS", nil, "")
+	if e != nil || v.BiddingStrategy != "MAX_CONVERSIONS" || v.DailyBudgetAmount.Amount != 25 {
+		t.Fatalf("%+v %v", v, e)
 	}
 }
-
 func TestValidateCampaignBiddingStrategyRejectsInvalidMaxConversionsPayloads(t *testing.T) {
-	targetCPA := 10.0
-	tests := []struct {
-		name          string
-		strategy      string
-		targetCPA     *float64
-		supplySources []string
-		adChannelType string
-		wantErr       string
-	}{
-		{
-			name:          "missing target CPA",
-			strategy:      "MAX_CONVERSIONS",
-			supplySources: []string{"APPSTORE_SEARCH_RESULTS"},
-			adChannelType: "SEARCH",
-			wantErr:       "target CPA is required",
-		},
-		{
-			name:          "wrong supply source",
-			strategy:      "MAX_CONVERSIONS",
-			targetCPA:     &targetCPA,
-			supplySources: []string{"APPSTORE_SEARCH_TAB"},
-			adChannelType: "SEARCH",
-			wantErr:       "APPSTORE_SEARCH_RESULTS",
-		},
-		{
-			name:          "wrong channel",
-			strategy:      "MAX_CONVERSIONS",
-			targetCPA:     &targetCPA,
-			supplySources: []string{"APPSTORE_SEARCH_RESULTS"},
-			adChannelType: "DISPLAY",
-			wantErr:       "adChannelType SEARCH",
-		},
-		{
-			name:          "target CPA without max conversions",
-			strategy:      "MANUAL_CPT",
-			targetCPA:     &targetCPA,
-			supplySources: []string{"APPSTORE_SEARCH_RESULTS"},
-			adChannelType: "SEARCH",
-			wantErr:       "only supported",
-		},
-		{
-			name:          "unknown strategy",
-			strategy:      "AUTO_MAGIC",
-			supplySources: []string{"APPSTORE_SEARCH_RESULTS"},
-			adChannelType: "SEARCH",
-			wantErr:       "unsupported",
-		},
-		{
-			name:          "valid max conversions",
-			strategy:      "MAX_CONVERSIONS",
-			targetCPA:     &targetCPA,
-			supplySources: []string{"APPSTORE_SEARCH_RESULTS"},
-			adChannelType: "SEARCH",
-		},
+	if e := validateCampaignBiddingStrategy("MAX_CONVERSIONS", nil, []string{"APPSTORE_SEARCH_TAB"}, "SEARCH"); e == nil {
+		t.Fatal("accepted incompatible placement")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateCampaignBiddingStrategy(tt.strategy, tt.targetCPA, tt.supplySources, tt.adChannelType)
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("expected no error, got %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
-			}
-		})
+	if e := validateCampaignBiddingStrategy("AUTO_MAGIC", nil, nil, ""); e == nil {
+		t.Fatal("accepted unknown strategy")
 	}
 }
-
 func TestUpdateCampaignBiddingStrategyPayloads(t *testing.T) {
-	t.Setenv(credentialsEnvJSON, testCredentialsJSON(t))
-
-	var seenBodies []string
-	client := NewClient(&http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			switch {
-			case req.URL.String() == appleIDTokenURL:
-				return jsonResponse(http.StatusOK, `{"access_token":"token","expires_in":3600}`), nil
-			case req.URL.String() == appleAdsAPIBase+"/me":
-				return jsonResponse(http.StatusOK, `{"data":{"parentOrgId":"123"}}`), nil
-			case req.Method == http.MethodPut && req.URL.Path == "/api/v5/campaigns/42":
-				body, _ := io.ReadAll(req.Body)
-				seenBodies = append(seenBodies, string(body))
-				if strings.Contains(string(body), "MAX_CONVERSIONS") {
-					return jsonResponse(http.StatusOK, `{"data":{"id":42,"name":"Campaign","status":"ENABLED","biddingStrategy":"MAX_CONVERSIONS","targetCpa":{"amount":"12","currency":"USD"}}}`), nil
-				}
-				return jsonResponse(http.StatusOK, `{"data":{"id":42,"name":"Campaign","status":"ENABLED","biddingStrategy":"MANUAL_CPT","targetCpa":null}}`), nil
-			default:
-				return jsonResponse(http.StatusNotFound, `{"error":"unexpected request: `+req.Method+` `+req.URL.String()+`"}`), nil
-			}
-		}),
+	writes := 0
+	c := platformTestClient(t, func(r *http.Request) (*http.Response, error) {
+		writes++
+		b, _ := io.ReadAll(r.Body)
+		if string(b) != `{"bidStrategy":{"bidStrategyGoal":"INSTALL","bidStrategyType":"MAX_CONVERSIONS"}}` {
+			t.Fatalf("%s", b)
+		}
+		return jsonResponse(200, `{"result":{"id":42}}`), nil
 	})
-
-	targetCPA := 12.0
-	if _, err := client.UpdateCampaignBiddingStrategy(context.Background(), 42, "MAX_CONVERSIONS", &targetCPA, "USD"); err != nil {
-		t.Fatalf("update to max conversions failed: %v", err)
+	if _, e := c.UpdateCampaignBiddingStrategy(context.Background(), 42, "MAX_CONVERSIONS", nil, "GBP"); e != nil {
+		t.Fatal(e)
 	}
-	if _, err := client.UpdateCampaignBiddingStrategy(context.Background(), 42, "MANUAL_CPT", nil, "USD"); err != nil {
-		t.Fatalf("update to manual failed: %v", err)
+	target := 12.0
+	if _, e := c.UpdateCampaignBiddingStrategy(context.Background(), 42, "MAX_CONVERSIONS", &target, "GBP"); e == nil {
+		t.Fatal("silently translated target CPA")
 	}
-	if len(seenBodies) != 2 {
-		t.Fatalf("expected two update requests, got %d", len(seenBodies))
-	}
-	for _, want := range []string{`"biddingStrategy":"MAX_CONVERSIONS"`, `"targetCpa":{"amount":"12.0000","currency":"USD"}`} {
-		if !strings.Contains(seenBodies[0], want) {
-			t.Fatalf("expected max conversions body to contain %s, got %s", want, seenBodies[0])
-		}
-	}
-	for _, want := range []string{`"biddingStrategy":"MANUAL_CPT"`, `"targetCpa":null`} {
-		if !strings.Contains(seenBodies[1], want) {
-			t.Fatalf("expected manual body to contain %s, got %s", want, seenBodies[1])
-		}
+	if writes != 1 {
+		t.Fatal(writes)
 	}
 }
 

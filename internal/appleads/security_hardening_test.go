@@ -16,14 +16,14 @@ func TestParseAndValidateDownloadURI(t *testing.T) {
 		t.Fatalf("unexpected host: %s", valid.Hostname())
 	}
 
-	relative, err := parseAndValidateDownloadURI("/api/v5/custom-reports/123/download?token=abc")
+	relative, err := parseAndValidateDownloadURI("/v1/example/download?token=abc")
 	if err != nil {
 		t.Fatalf("expected relative URI to be resolved, got error: %v", err)
 	}
 	if relative.Scheme != "https" {
 		t.Fatalf("unexpected scheme: %s", relative.Scheme)
 	}
-	if relative.Hostname() != "api.searchads.apple.com" {
+	if relative.Hostname() != "api.ads.apple.com" {
 		t.Fatalf("unexpected host for relative URI: %s", relative.Hostname())
 	}
 

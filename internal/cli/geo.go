@@ -64,7 +64,7 @@ func runGeoGet(ctx context.Context, client *appleads.Client, args []string, json
 		respondCommandError("geo", jsonOut, fmt.Errorf("Missing required --geoId <id>"))
 		return
 	}
-	data, err := client.FetchGeoData(ctx, geoID)
+	data, err := client.FetchGeoData(ctx, geoID, valueForFlag(args, "--entity"))
 	if err != nil {
 		respondCommandError("geo", jsonOut, err)
 		return
